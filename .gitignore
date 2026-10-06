@@ -1,0 +1,12 @@
+# Temporary and logs
+*.log
+temp/
+scratch/
+
+# IDE files
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini
