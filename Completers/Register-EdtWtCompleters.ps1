@@ -13,15 +13,15 @@ function Register-EdtWtCompleters {
 
         function Get-EdtCompletionProjects {
             $cfg = Get-EdtWtConfig
-            return @($cfg.projects.PSObject.Properties.Name)
+            return @(@($cfg.projects.PSObject.Properties).ForEach('Name'))
         }
 
         function Get-EdtCompletionExtensions {
             param([string]$Project)
             $cfg = Get-EdtWtConfig
-            if (-not $Project -or -not ($cfg.projects.PSObject.Properties.Name -contains $Project)) { return @() }
+            if (-not $Project -or ($null -eq $cfg.projects.PSObject.Properties[$Project])) { return @() }
             $def = $cfg.projects.$Project
-            if (-not ($def.PSObject.Properties.Name -contains 'active_extensions')) { return @() }
+            if ($null -eq $def.PSObject.Properties['active_extensions']) { return @() }
             return @($def.active_extensions)
         }
 
@@ -98,7 +98,7 @@ function Register-EdtWtCompleters {
     Register-ArgumentCompleter -CommandName 'Update-EdtWtReference' -ParameterName 'Project' -ScriptBlock {
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
         $cfg = Get-EdtWtConfig
-        $cfg.projects.PSObject.Properties.Name |
+        @($cfg.projects.PSObject.Properties).ForEach('Name') |
             Where-Object { $_ -like "$wordToComplete*" } |
             ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
     }

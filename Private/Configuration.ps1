@@ -80,7 +80,7 @@ function Get-EdtWtProperty {
     )
 
     if ($null -eq $InputObject) { return $Default }
-    if (-not ($InputObject.PSObject.Properties.Name -contains $Name)) { return $Default }
+    if ($null -eq $InputObject.PSObject.Properties[$Name]) { return $Default }
 
     $value = $InputObject.$Name
     if ($null -eq $value) { return $Default }
@@ -111,7 +111,7 @@ function Get-EdtWtProjectIdFromRepo {
     }
 
     foreach ($c in $candidates) {
-        if ($c -and $Projects.PSObject.Properties.Name -contains $c) { return $c }
+        if ($c -and ($null -ne $Projects.PSObject.Properties[$c])) { return $c }
     }
     return $null
 }
@@ -234,53 +234,73 @@ function Get-EdtWtConfig {
         }
     }
 
-    # 2. Пользовательский конфиг
-    $userCfgPath = Get-EdtWtUserConfigPath
-    if (Test-Path -LiteralPath $userCfgPath) {
+    # 2. Пользовательский конфиг (с поддержкой fallback на ~/.config/1c/projects.json)
+    $explicitCfgPath = $env:EDT_CONFIG_PATH
+    $primaryCfgPath = Join-Path ([Environment]::GetFolderPath('ApplicationData')) "EdtWorktree\config.json"
+    $legacyCfgPath = Join-Path $env:USERPROFILE ".config\1c\projects.json"
+
+    $configsToLoad = @()
+    if ($explicitCfgPath) {
+        if (Test-Path -LiteralPath $explicitCfgPath) {
+            $configsToLoad += $explicitCfgPath
+        }
+    } else {
+        # Сначала подгружаем legacy projects.json как fallback
+        if (Test-Path -LiteralPath $legacyCfgPath) {
+            $configsToLoad += $legacyCfgPath
+        }
+        # Затем основной конфиг пользователя (перекрывает пути, jvm и т.д.)
+        if (Test-Path -LiteralPath $primaryCfgPath) {
+            $configsToLoad += $primaryCfgPath
+        }
+    }
+
+    foreach ($cfgPath in $configsToLoad) {
         try {
-            $userJson = Get-Content -Raw -LiteralPath $userCfgPath -Encoding UTF8 | ConvertFrom-Json
+            $userJson = Get-Content -Raw -LiteralPath $cfgPath -Encoding UTF8 | ConvertFrom-Json
             if ($userJson) {
-                # Если это legacy projects.json (~/.config/1c/projects.json)
-                if ($userJson.PSObject.Properties.Name -contains 'defaults' -and $userJson.defaults) {
+                if ($null -ne $userJson.PSObject.Properties['defaults'] -and $userJson.defaults) {
                     foreach ($prop in $userJson.defaults.PSObject.Properties) {
                         Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name $prop.Name -Value $prop.Value -Force
                     }
                 }
-                if ($userJson.PSObject.Properties.Name -contains 'worktree' -and $userJson.worktree) {
+                if ($null -ne $userJson.PSObject.Properties['worktree'] -and $userJson.worktree) {
                     $config.worktree = $userJson.worktree
-                    if ($userJson.worktree.PSObject.Properties.Name -contains 'root_dir') {
+                    if ($null -ne $userJson.worktree.PSObject.Properties['root_dir']) {
                         $config.paths.workspaces_root = $userJson.worktree.root_dir
                     }
-                    if ($userJson.worktree.PSObject.Properties.Name -contains 'reference_branch') {
+                    if ($null -ne $userJson.worktree.PSObject.Properties['reference_branch']) {
                         Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name 'reference_branch' -Value $userJson.worktree.reference_branch -Force
                     }
                 }
-                if ($userJson.PSObject.Properties.Name -contains 'paths' -and $userJson.paths) {
-                    if ($userJson.paths.PSObject.Properties.Name -contains 'projects_root') {
+                if ($null -ne $userJson.PSObject.Properties['paths'] -and $userJson.paths) {
+                    if ($null -ne $userJson.paths.PSObject.Properties['projects_root']) {
                         $config.paths.projects_root = $userJson.paths.projects_root
                     }
-                    if ($userJson.paths.PSObject.Properties.Name -contains 'worktree_root') {
+                    if ($null -ne $userJson.paths.PSObject.Properties['worktree_root']) {
                         $config.paths.worktree_root = $userJson.paths.worktree_root
                     }
-                    if ($userJson.paths.PSObject.Properties.Name -contains 'workspaces_root') {
+                    if ($null -ne $userJson.paths.PSObject.Properties['workspaces_root']) {
                         $config.paths.workspaces_root = $userJson.paths.workspaces_root
                         $config.worktree.root_dir = $userJson.paths.workspaces_root
                     }
                 }
-                if ($userJson.PSObject.Properties.Name -contains 'edt' -and $userJson.edt) {
-                    if ($userJson.edt.PSObject.Properties.Name -contains 'cli_path') {
+                if ($null -ne $userJson.PSObject.Properties['edt'] -and $userJson.edt) {
+                    if ($null -ne $userJson.edt.PSObject.Properties['cli_path']) {
                         Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name '1cedtcli' -Value $userJson.edt.cli_path -Force
                     }
-                    if ($userJson.edt.PSObject.Properties.Name -contains 'jvm') {
+                    if ($null -ne $userJson.edt.PSObject.Properties['jvm']) {
                         Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name 'jvm' -Value $userJson.edt.jvm -Force
                     }
                 }
-                if ($userJson.PSObject.Properties.Name -contains 'projects' -and $userJson.projects) {
-                    $config.projects = $userJson.projects
+                if ($null -ne $userJson.PSObject.Properties['projects'] -and $userJson.projects) {
+                    foreach ($pProp in $userJson.projects.PSObject.Properties) {
+                        Add-Member -InputObject $config.projects -MemberType NoteProperty -Name $pProp.Name -Value $pProp.Value -Force
+                    }
                 }
             }
         } catch {
-            Write-Warning "Ошибка чтения пользовательского конфига ($userCfgPath): $($_.Exception.Message)"
+            Write-Warning "Ошибка чтения пользовательского конфига ($cfgPath): $($_.Exception.Message)"
         }
     }
 
@@ -304,7 +324,13 @@ function Get-EdtWtConfig {
         try {
             $projJson = Get-Content -Raw -LiteralPath $projectCfgFile -Encoding UTF8 | ConvertFrom-Json
             if ($projJson) {
-                $projId = if ($projJson.PSObject.Properties.Name -contains 'cf_project' -and $projJson.cf_project) {
+                $projId = if ($null -ne $projJson.PSObject.Properties['project_id'] -and $projJson.project_id) {
+                    $projJson.project_id
+                } elseif ($null -ne $projJson.PSObject.Properties['project_name'] -and $projJson.project_name) {
+                    $projJson.project_name
+                } elseif ($null -ne $projJson.PSObject.Properties['name'] -and $projJson.name) {
+                    $projJson.name
+                } elseif ($null -ne $projJson.PSObject.Properties['cf_project'] -and $projJson.cf_project -and ($projJson.cf_project -notmatch '[\\/]')) {
                     $projJson.cf_project
                 } else {
                     Split-Path -Leaf (Split-Path -Parent $projectCfgFile)

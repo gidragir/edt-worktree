@@ -96,4 +96,31 @@ Describe 'Конфигурация EdtWorktree' {
             $cfg.projects.'my-custom-cf'.reference_branch | Should -Be 'master'
         }
     }
+
+    Context 'Безопасность Set-StrictMode и пустые коллекции' {
+        It 'Get-EdtWtProperty не выбрасывает исключение для пустого объекта' {
+            $empty = [PSCustomObject]@{}
+            $val = & (Get-Module EdtWorktree) {
+                param($o) Get-EdtWtProperty $o 'missing' 'default_val'
+            } $empty
+            $val | Should -Be 'default_val'
+        }
+
+        It 'Resolve-EdtWtTarget не падает при отсутствии проектов в реестре' {
+            {
+                & (Get-Module EdtWorktree) {
+                    Resolve-EdtWtTarget -Positional @() -Command 'open'
+                }
+            } | Should -Not -Throw
+        }
+
+        It 'Get-EdtWtProjectIdFromRepo не падает при пустом Projects' {
+            $empty = [PSCustomObject]@{}
+            $res = & (Get-Module EdtWorktree) {
+                param($p) Get-EdtWtProjectIdFromRepo -GitCommonDir 'C:\dummy\.git' -Projects $p
+            } $empty
+            $res | Should -BeNullOrEmpty
+        }
+    }
 }
+

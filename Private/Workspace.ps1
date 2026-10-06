@@ -308,7 +308,11 @@ function Initialize-EdtWtWorkspace {
 
     if (-not (Test-Path -LiteralPath $Context.ReferenceWsDir)) {
         Write-Host "    Эталон отсутствует — запуск прогрева..." -ForegroundColor Yellow
-        Invoke-EdtWorktreeWarmup -ProjectName $Context.ProjectId -MaxHeap $MaxHeap
+        $warmupParams = @{
+            ProjectName = $Context.ProjectId
+        }
+        if ($MaxHeap) { $warmupParams['MaxHeap'] = $MaxHeap }
+        Invoke-EdtWorktreeWarmup @warmupParams
     }
 
     if (-not $PSCmdlet.ShouldProcess($Context.WorkspaceDir, "Склонировать эталон $($Context.ReferenceWsDir)")) {

@@ -269,7 +269,7 @@ function Resolve-EdtWtTarget {
     )
 
     $items = @($Positional | Where-Object { $_ })
-    $projects = @((Get-EdtWtProjectsConfig).projects.PSObject.Properties.Name)
+    $projects = @(@((Get-EdtWtProjectsConfig).projects.PSObject.Properties).ForEach('Name'))
 
     $result = [PSCustomObject]@{
         Path       = $null

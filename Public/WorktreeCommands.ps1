@@ -53,12 +53,13 @@ function Get-EdtWtContext {
 
         $branch = (git rev-parse --abbrev-ref HEAD 2>$null)
 
-        $projectId = if ($ProjectName) {
-            $ProjectName
-        } elseif ($cfg.PSObject.Properties.Name -contains 'ActiveProjectId' -and $cfg.ActiveProjectId) {
-            $cfg.ActiveProjectId
+        $projectId = $null
+        if ($ProjectName) {
+            $projectId = $ProjectName
+        } elseif (($null -ne $cfg.PSObject.Properties['ActiveProjectId']) -and $cfg.ActiveProjectId) {
+            $projectId = $cfg.ActiveProjectId
         } else {
-            Get-EdtWtProjectIdFromRepo -GitCommonDir $gitCommonDir -Projects $cfg.projects
+            $projectId = Get-EdtWtProjectIdFromRepo -GitCommonDir $gitCommonDir -Projects $cfg.projects
         }
     } finally {
         Pop-Location
@@ -67,7 +68,7 @@ function Get-EdtWtContext {
     if (-not $projectId) {
         throw "Проект не найден в конфигурации (.edt-worktree.json или реестре проектов). Репозиторий: $topLevel. Укажите -ProjectName явно."
     }
-    if (-not ($cfg.projects.PSObject.Properties.Name -contains $projectId)) {
+    if ($null -eq $cfg.projects.PSObject.Properties[$projectId]) {
         throw "Проект '$projectId' отсутствует в конфигурации (.edt-worktree.json или реестре проектов)."
     }
 
@@ -198,7 +199,7 @@ function Get-EdtWorktreeList {
     }
 
     foreach ($r in $rows) {
-        if (-not $r.PSObject.Properties.Name.Contains('CodePath')) {
+        if ($null -eq $r.PSObject.Properties['CodePath']) {
             $r | Add-Member -NotePropertyName CodePath -NotePropertyValue '' -Force
         }
     }
@@ -267,13 +268,19 @@ function Invoke-EdtWorktreeOpen {
     )
 
     $ctx = Get-EdtWtContext
+    if ($null -eq $ctx) { return }
 
     Write-Host "==> Открытие рабочей области EDT" -ForegroundColor Green
     Write-Host "    Проект:   $($ctx.ProjectId)" -ForegroundColor Cyan
     Write-Host "    Worktree: $($ctx.WorktreeId) ($($ctx.WorktreePath))" -ForegroundColor Cyan
     Write-Host "    WS:       $($ctx.WorkspaceDir)" -ForegroundColor Cyan
 
-    if (-not (Initialize-EdtWtWorkspace -Context $ctx -Refresh:$Refresh -MaxHeap $MaxHeap)) {
+    $initParams = @{
+        Context = $ctx
+        Refresh = $Refresh
+    }
+    if ($MaxHeap) { $initParams['MaxHeap'] = $MaxHeap }
+    if (-not (Initialize-EdtWtWorkspace @initParams)) {
         return
     }
 
@@ -310,7 +317,11 @@ function Invoke-EdtWorktreeOpen {
         return
     }
 
-    Start-EdtWtGui -Context $ctx -GuiMaxHeap $GuiMaxHeap
+    $guiParams = @{
+        Context = $ctx
+    }
+    if ($GuiMaxHeap) { $guiParams['GuiMaxHeap'] = $GuiMaxHeap }
+    Start-EdtWtGui @guiParams
 }
 
 function Invoke-EdtWorktreeWarmup {
@@ -357,6 +368,7 @@ function Invoke-EdtWorktreeWarmup {
     )
 
     $ctx = Get-EdtWtContext -ProjectName $ProjectName
+    if ($null -eq $ctx) { return }
 
     Write-Host "==> Прогрев эталона: $($ctx.ProjectId)" -ForegroundColor Green
     Write-Host "    Reference WS: $($ctx.ReferenceWsDir)" -ForegroundColor Cyan
@@ -463,6 +475,7 @@ function Invoke-EdtWorktreeAdd {
     )
 
     $ctx = Get-EdtWtContext
+    if ($null -eq $ctx) { return }
 
     if (-not (Test-Path -LiteralPath $ctx.WorkspaceDir)) {
         throw "Рабочая область не найдена: $($ctx.WorkspaceDir). Сначала выполните edt-wt-open."
@@ -549,6 +562,7 @@ function Invoke-EdtWorktreeClean {
     }
 
     $ctx = Get-EdtWtContext
+    if ($null -eq $ctx) { return }
 
     $targetId = if ($WorktreeId) { ConvertTo-EdtWtSafeName $WorktreeId } else { $ctx.WorktreeId }
     $wsDir = Join-Path $ctx.ProjectWsRoot $targetId
