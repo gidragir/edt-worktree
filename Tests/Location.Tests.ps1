@@ -81,4 +81,58 @@ Describe 'Чтение и перезапись .location' {
         $parsed = & (Get-Module EdtWorktree) { param($f) Get-EdtWtLocationUri -LocationFile $f } $script:File
         $parsed | Should -BeNullOrEmpty
     }
+
+    It 'экранирует пробелы и сохраняет кириллицу в ConvertTo-EdtWtEclipseLocationUri' {
+        $path = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'
+        $expected = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
+        $actual = & (Get-Module EdtWorktree) { param($p) ConvertTo-EdtWtEclipseLocationUri -Path $p } $path
+        $actual | Should -Be $expected
+    }
+
+    It 'декодирует URI с экранированными пробелами и кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
+        $uri = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
+        $expected = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'
+        $actual = & (Get-Module EdtWorktree) { param($u) ConvertFrom-EdtWtEclipseLocationUri -UriValue $u } $uri
+        $actual | Should -Be $expected
+    }
+
+    It 'декодирует URI с percent-encoded кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
+        $uri = 'URI//file:/D:/projects/worktree/%D0%98%D0%BD%D1%82%D0%B5%D0%B3%D1%80%D0%B0%D1%86%D0%B8%D1%8F%20%D1%81%20%D0%9A%D0%B0%D1%81%D0%BF%D0%B8/src/cf'
+        $expected = 'D:\projects\worktree\Интеграция с Каспи\src\cf'
+        $actual = & (Get-Module EdtWorktree) { param($u) ConvertFrom-EdtWtEclipseLocationUri -UriValue $u } $uri
+        $actual | Should -Be $expected
+    }
+
+    It 'исправляет неэкранированные пробелы в .location через Repair-EdtWtWorkspaceLocations' {
+        $tempWs = Join-Path ([System.IO.Path]::GetTempPath()) ('ws_' + [guid]::NewGuid().ToString('N'))
+        $tempWt = Join-Path ([System.IO.Path]::GetTempPath()) ('wt_' + [guid]::NewGuid().ToString('N') + '\Интеграция с Каспи\ka-intertop')
+        $refWs = Join-Path ([System.IO.Path]::GetTempPath()) ('ref_' + [guid]::NewGuid().ToString('N'))
+
+        $projDir = Join-Path $tempWs '.metadata\.plugins\org.eclipse.core.resources\.projects\cf'
+        $wtCfDir = Join-Path $tempWt 'src\cf'
+        New-Item -ItemType Directory -Path $projDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $wtCfDir -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $wtCfDir '.project') -Force | Out-Null
+
+        $locFile = Join-Path $projDir '.location'
+        # Записываем старый сломанный URI с сырыми пробелами
+        $brokenUri = "URI//file:/$($wtCfDir -replace '\\', '/')"
+        New-TestLocationFile -Path $locFile -Uri $brokenUri | Out-Null
+
+        try {
+            $repaired = & (Get-Module EdtWorktree) {
+                param($ws, $wt, $ref)
+                Repair-EdtWtWorkspaceLocations -WorkspaceDir $ws -WorktreePath $wt -ReferenceWsDir $ref
+            } $tempWs $tempWt $refWs
+
+            $repaired | Should -Contain 'cf'
+
+            $parsed = & (Get-Module EdtWorktree) { param($f) Get-EdtWtLocationUri -LocationFile $f } $locFile
+            $parsed.Value | Should -Not -Match ' '
+            $parsed.Value | Should -Match '%20'
+        } finally {
+            Remove-Item -LiteralPath $tempWs -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Split-Path (Split-Path $tempWt)) -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

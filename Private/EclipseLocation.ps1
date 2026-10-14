@@ -77,6 +77,35 @@ function Get-EdtWtEclipseProjectName {
     return (Split-Path -Leaf $ProjectDir)
 }
 
+function ConvertTo-EdtWtEclipseLocationUri {
+    <#
+      Формирует канонический URI для файла .location Eclipse.
+      Формат: 'URI//file:/' + путь с прямыми слешами и экранированными пробелами (%20).
+      Eclipse LocalMetaArea.readPrivateDescription парсит URI через java.net.URI.create(),
+      поэтому неэкранированные пробелы вызывают IllegalArgumentException.
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    $normalized = $Path.TrimEnd('\') -replace '\\', '/'
+    $escaped = $normalized -replace ' ', '%20'
+    return "URI//file:/$($escaped.TrimStart('/'))"
+}
+
+function ConvertFrom-EdtWtEclipseLocationUri {
+    <#
+      Декодирует URI из .location Eclipse в локальный путь Windows.
+      Снимает префикс 'URI//file:/' и разэкранирует percent-encoding (%20, %D0%... и т.д.).
+    #>
+    param([Parameter(Mandatory)][string]$UriValue)
+
+    $prefix = 'URI//file:/'
+    if (-not $UriValue.StartsWith($prefix)) {
+        return $null
+    }
+    $raw = $UriValue.Substring($prefix.Length)
+    return ([System.Uri]::UnescapeDataString($raw) -replace '/', '\')
+}
+
 function Repair-EdtWtWorkspaceLocations {
     <#
       После клонирования эталона все проекты в workspace указывают на пути
@@ -104,17 +133,26 @@ function Repair-EdtWtWorkspaceLocations {
         $parsed = Get-EdtWtLocationUri -LocationFile $locFile
         if (-not $parsed -or -not $parsed.Value.StartsWith($prefix)) { continue }
 
-        $oldPath = $parsed.Value.Substring($prefix.Length) -replace '/', '\'
+        $oldPath = ConvertFrom-EdtWtEclipseLocationUri -UriValue $parsed.Value
+        if (-not $oldPath) { continue }
 
-        # Уже указывает на текущий workspace/worktree — перепривязка не нужна
-        if ($oldPath -like "$($WorkspaceDir.TrimEnd('\'))\*" -or $oldPath -like "$($WorktreePath.TrimEnd('\'))\*") {
+        # Проверяем, указывает ли путь уже на текущий worktree или workspace
+        $isTargetWs = $oldPath -like "$($WorkspaceDir.TrimEnd('\'))\*"
+        $isTargetWt = $oldPath -like "$($WorktreePath.TrimEnd('\'))\*"
+        $hasIllegalChars = ($parsed.Value -match ' ')
+
+        # Если путь уже верный и формат URI валиден (нет пробелов) — перепривязка не нужна
+        if (($isTargetWs -or $isTargetWt) -and -not $hasIllegalChars) {
             continue
         }
 
         $newPath = $null
 
-        # 1. Служебные проекты внутри самого эталонного workspace (например EGit cmp)
-        if ($oldPath -like "$($ReferenceWsDir.TrimEnd('\'))\*") {
+        if ($isTargetWs -or $isTargetWt) {
+            # Путь уже правильный по смыслу, но в .location сохранён невалидный URI (например, с сырыми пробелами)
+            $newPath = $oldPath
+        } elseif ($oldPath -like "$($ReferenceWsDir.TrimEnd('\'))\*") {
+            # 1. Служебные проекты внутри самого эталонного workspace (например EGit cmp)
             $newPath = Join-Path $WorkspaceDir $oldPath.Substring($ReferenceWsDir.TrimEnd('\').Length + 1)
         } else {
             # 2. Проекты исходников: ищем самый длинный хвост пути,
@@ -131,10 +169,12 @@ function Repair-EdtWtWorkspaceLocations {
             Write-Host "    [warn] Не удалось перепривязать проект '$($dir.Name)': $oldPath" -ForegroundColor Yellow
             continue
         }
-        if ($newPath.TrimEnd('\') -ieq $oldPath.TrimEnd('\')) { continue }
+
+        $newUri = ConvertTo-EdtWtEclipseLocationUri -Path $newPath
+        if ($newUri -ieq $parsed.Value) { continue }
 
         try {
-            Set-EdtWtLocationUri -LocationFile $locFile -Parsed $parsed -NewValue ($prefix + ($newPath -replace '\\', '/'))
+            Set-EdtWtLocationUri -LocationFile $locFile -Parsed $parsed -NewValue $newUri
         } catch {
             throw "Не удалось перепривязать проект '$($dir.Name)' ($locFile): $($_.Exception.Message)"
         }
