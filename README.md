@@ -119,6 +119,7 @@ pwsh -NoProfile -File scripts/install.ps1
 
 - Логику в профиль оболочки не класть: она должна работать из `pwsh -NoProfile`.
 - Новые `.ps1` с кириллицей сохранять в UTF-8 с BOM (иначе PSScriptAnalyzer падает).
+- **JVM и JavaFX**: 1C:EDT требует Java 17 с JavaFX (Azul Zulu FX). Пути с пробелами в аргументах `Start-Process` (`-vm "$jvmDll"`) экранировать кавычками: `"`"$jvmDll`""`.
 - Изменяющие команды поддерживают `-WhatIf`; удаление необратимо, подтверждение по умолчанию.
 - Подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в `bin/edt.ps1`,
   оба списка в `Completers`, `Show-EdtWtUsage`, `COMMANDS.md`, тест контракта.
