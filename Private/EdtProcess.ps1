@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # EdtProcess.ps1 - Поиск, аргументы, управление процессами и запуск EDT / vrunner
 # ==============================================================================
 
@@ -313,7 +313,12 @@ function Start-EdtWtGui {
         throw "Не найден GUI 1C:EDT: $($Context.EdtGuiPath)"
     }
 
-    $guiArgs = @("-data", "`"$($Context.WorkspaceDir)`"")
+    $guiArgs = @()
+    $jvmDll = if ($env:JAVA_HOME) { Join-Path ($env:JAVA_HOME -replace '/', '\') "bin\server\jvm.dll" } else { "C:\Program Files\Zulu\zulu-17\bin\server\jvm.dll" }
+    if (Test-Path -LiteralPath $jvmDll) {
+        $guiArgs += @("-vm", "`"$jvmDll`"")
+    }
+    $guiArgs += @("-data", "`"$($Context.WorkspaceDir)`"")
     $guiVm = Resolve-EdtWtGuiVmArgs -Context $Context -MaxHeap $GuiMaxHeap
     if ($guiVm) {
         Write-Host "    JVM GUI: -Xmx$($guiVm.MaxHeapGb)g (в 1cedt.ini задано 4g)" -ForegroundColor Gray
