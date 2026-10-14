@@ -22,3 +22,11 @@
 
 - Все `.ps1` и `.psm1` файлы, содержащие кириллицу или не-ASCII символы, сохраняются строго в **UTF-8 с BOM** (правило PSScriptAnalyzer `PSUseBOMForUnicodeEncodedFile`).
 - Перед завершением любых правок всегда выполнять проверку: `pwsh -NoProfile -File Invoke-EdtWtChecks.ps1`.
+
+## 4. Eclipse Workspace `.location` и привязка проектов
+
+- **Формат файла `.location`**: Eclipse Core Resources хранит привязки внешних проектов в файлах `.metadata\.plugins\org.eclipse.core.resources\.projects\<project>\.location`. Формат состоит из заголовка (16 байт), UTF-8 строки с префиксом `URI//` и неизменяемого хвоста. Повреждение заголовка или хвоста ломает проект.
+- **Обязательное экранирование пробелов (`%20`)**: При парсинге `.location` класс Eclipse `LocalMetaArea.readPrivateDescription` вызывает `java.net.URI.create(storedValue.substring(5))`. Неэкранированные пробелы в путях вызывают `IllegalArgumentException`, из-за чего Eclipse сбрасывает `locationURI` на каталог по умолчанию внутри workspace (`<workspace>/<project>`), и проекты открываются как пустые желтые папки без метаданных 1С.
+- **Преобразование URI**:
+  - При записи: всегда экранировать пробелы как `%20` через `ConvertTo-EdtWtEclipseLocationUri` (`URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/...`), сохраняя символы Unicode/кириллицы.
+  - При чтении: всегда разэкранировать строку перед сравнением с путями на диске через `ConvertFrom-EdtWtEclipseLocationUri` (`[System.Uri]::UnescapeDataString`).
