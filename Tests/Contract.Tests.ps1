@@ -28,6 +28,7 @@ BeforeAll {
         'Set-EdtProject'
         'Remove-EdtProject'
         'Update-EdtSelf'
+        'Uninstall-EdtWorktree'
         'Test-EdtEnvironment'
     )
     $script:Legacy = @('wt-open', 'wt-warmup', 'wt-add', 'wt-clean', 'wt-list',

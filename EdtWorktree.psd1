@@ -27,6 +27,7 @@
         'Set-EdtProject'
         'Remove-EdtProject'
         'Update-EdtSelf'
+        'Uninstall-EdtWorktree'
         'Test-EdtEnvironment'
 
         # Совместимость со старыми именами
