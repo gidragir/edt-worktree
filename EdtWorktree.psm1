@@ -27,6 +27,7 @@ $loadOrder = @(
     (Join-Path $PSScriptRoot 'Public\ConfigCommands.ps1')
     (Join-Path $PSScriptRoot 'Public\ProjectCommands.ps1')
     (Join-Path $PSScriptRoot 'Public\LifecycleCommands.ps1')
+    (Join-Path $PSScriptRoot 'Public\DoctorCommand.ps1')
 
     # Автодополнение
     (Join-Path $PSScriptRoot 'Completers\Register-EdtWtCompleters.ps1')

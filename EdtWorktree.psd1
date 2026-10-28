@@ -27,6 +27,7 @@
         'Set-EdtProject'
         'Remove-EdtProject'
         'Update-EdtSelf'
+        'Test-EdtEnvironment'
 
         # Совместимость со старыми именами
         'Invoke-EdtWtLegacyCommand'
