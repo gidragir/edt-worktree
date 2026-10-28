@@ -80,27 +80,37 @@ function Get-EdtWtWorktreePathForBranch {
 
 function Get-EdtWtWorktreeDir {
     <#
-      Каталог worktree ветки. Короткое имя дополняется git.branch_prefix.
+      Каталог worktree ветки. Короткое имя дополняется git.branch_prefix, полное
+      (со слешем) берётся как есть. Сначала спрашивается git (worktree может лежать
+      где угодно), затем проверяется ожидаемый путь; при -CreateIfMissing
+      недостающий worktree создаётся.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)][string]$Project,
-        [Parameter(Mandatory)][string]$Task,
+        [Parameter(Mandatory)][string]$Branch,
         [switch]$CreateIfMissing
     )
 
     $cfg = Get-EdtWtConfig
-    $branch = Resolve-EdtWtBranchName -Name $Task -Prefix (Get-EdtWtProperty $cfg.git 'branch_prefix' '')
-    $path = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) (ConvertTo-EdtWtSafeName $branch)
+    $full = Resolve-EdtWtBranchName -Name $Branch -Prefix (Get-EdtWtProperty $cfg.git 'branch_prefix' '')
+    $repo = Join-Path $cfg.paths.repos_root $Project
+    if (-not (Test-Path -LiteralPath $repo)) { throw "Каталог проекта не найден: $repo" }
+
+    $existing = Get-EdtWtWorktreePathForBranch -RepoPath $repo -Branch $full
+    if ($existing -and (Test-Path -LiteralPath $existing)) { return $existing }
+
+    $path = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) (ConvertTo-EdtWtSafeName $full)
     if (Test-Path -LiteralPath $path) { return $path }
 
     if ($CreateIfMissing) {
-        return (New-EdtWtWorktree -Project $Project -Branch $branch)
+        return (New-EdtWtWorktree -Project $Project -Branch $full)
     }
 
-    throw "Worktree не найден: $path"
+    throw "Worktree не найден: ветка '$full' проекта '$Project' (ожидался $path)"
 }
+
 function Invoke-EdtWtInLocation {
     <#
       Выполняет действие в указанном каталоге, возвращая прежний. Если каталог
@@ -289,6 +299,9 @@ function Invoke-EdtWtSafeWarmup {
 function Resolve-EdtWtTarget {
     <#
       Определяет, над чем работать, по позиционным аргументам и текущему каталогу.
+      Возвращает Path (где выполнять; $null - текущий каталог), ProjectId,
+      Branch (полное имя ветки, для remove) и Extensions (для add).
+      open <проект> <ветка> создаёт недостающий worktree (под -WhatIf - нет).
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
@@ -301,51 +314,61 @@ function Resolve-EdtWtTarget {
 
     $items = @($Positional | Where-Object { $_ })
     $cfg = Get-EdtWtConfig
-    $projects = @(@($cfg.projects.PSObject.Properties).ForEach('Name'))
+    $prefix = Get-EdtWtProperty $cfg.git 'branch_prefix' ''
 
     $result = [PSCustomObject]@{
         Path       = $null
         ProjectId  = $null
-        WorktreeId = $null
+        Branch     = $null
         Extensions = @()
     }
 
-    $projectGiven = ($items.Count -gt 0 -and $projects -contains $items[0])
-
     switch ($Command) {
         'warmup' {
-            if ($projectGiven) {
+            if ($items.Count -gt 1) {
+                throw "Лишние аргументы: $(($items | Select-Object -Skip 1) -join ', '). Использование: edt warmup [проект]"
+            }
+            if ($items.Count -eq 1) {
+                Get-EdtWtProjectDef -Config $cfg -Name $items[0] | Out-Null
                 $result.ProjectId = $items[0]
-                $result.Extensions = @($items | Select-Object -Skip 1)
                 $result.Path = Join-Path $cfg.paths.repos_root $items[0]
                 if (-not (Test-Path -LiteralPath $result.Path)) {
                     throw "Каталог проекта не найден: $($result.Path)"
                 }
-            } else {
-                $result.Extensions = $items
             }
+        }
+
+        'add' {
+            $result.Extensions = $items
         }
 
         'remove' {
+            if ($items.Count -gt 2) {
+                throw "Лишние аргументы: $(($items | Select-Object -Skip 2) -join ', '). Использование: edt remove [проект] [ветка]"
+            }
+            $projectGiven = ($items.Count -gt 0 -and $null -ne $cfg.projects.PSObject.Properties[$items[0]])
             if ($projectGiven) {
-                if ($items.Count -lt 2) { throw "Не указана задача. Пример: edt remove $($items[0]) TASK-123" }
+                if ($items.Count -lt 2) { throw "Не указана ветка. Пример: edt remove $($items[0]) TASK-123" }
                 $result.ProjectId = $items[0]
-                $result.Path = Get-EdtWtWorktreeDir -Project $items[0] -Task $items[1]
-            } elseif ($items.Count -gt 0) {
-                $result.WorktreeId = ConvertTo-EdtWtSafeName (Resolve-EdtWtBranchName -Name $items[0] -Prefix (Get-EdtWtProperty $cfg.git 'branch_prefix' ''))
+                $result.Branch = Resolve-EdtWtBranchName -Name $items[1] -Prefix $prefix
+                $result.Path = Get-EdtWtWorktreeDir -Project $items[0] -Branch $result.Branch
+            } elseif ($items.Count -eq 2) {
+                Get-EdtWtProjectDef -Config $cfg -Name $items[0] | Out-Null
+            } elseif ($items.Count -eq 1) {
+                $result.Branch = Resolve-EdtWtBranchName -Name $items[0] -Prefix $prefix
             }
         }
 
-        default {
-            # open и add
-            if ($projectGiven) {
-                if ($items.Count -lt 2) { throw "Не указана задача. Пример: edt $Command $($items[0]) TASK-123" }
+        'open' {
+            if ($items.Count -gt 2) {
+                throw "Лишние аргументы: $(($items | Select-Object -Skip 2) -join ', '). Использование: edt open [проект ветка]"
+            }
+            if ($items.Count -gt 0) {
+                Get-EdtWtProjectDef -Config $cfg -Name $items[0] | Out-Null
+                if ($items.Count -lt 2) { throw "Не указана ветка. Пример: edt open $($items[0]) TASK-123" }
                 $result.ProjectId = $items[0]
-                $result.WorktreeId = $items[1]
-                $result.Path = Get-EdtWtWorktreeDir -Project $items[0] -Task $items[1] -CreateIfMissing:($Command -eq 'open')
-                $result.Extensions = @($items | Select-Object -Skip 2)
-            } else {
-                $result.Extensions = $items
+                $result.Branch = Resolve-EdtWtBranchName -Name $items[1] -Prefix $prefix
+                $result.Path = Get-EdtWtWorktreeDir -Project $items[0] -Branch $result.Branch -CreateIfMissing
             }
         }
     }

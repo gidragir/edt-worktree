@@ -2,7 +2,7 @@
 # EdtWorktree - управление рабочими областями 1C:EDT для git worktree
 # ==============================================================================
 # Загрузчик модуля: переменные, приватные помощники, публичные операции,
-# автодополнение и алиасы. Логика лежит в Private/ и Public/ по файлу на функцию.
+# автодополнение и алиас edt. Логика лежит в Private/ и Public/ по файлу на функцию.
 # ==============================================================================
 
 Set-StrictMode -Version Latest
@@ -41,34 +41,5 @@ foreach ($file in $loadOrder) {
 
 # Единственное короткое имя: подкоманды вместо отдельных команд.
 Set-Alias -Name edt -Value Invoke-EdtCommand
-
-# Прежние имена остаются временно и подсказывают замену. Функции создаются
-# динамически: имена вида 'wt-open' не подчиняются правилу Глагол-Существительное,
-# и объявлять полтора десятка почти одинаковых функций вручную незачем.
-$script:EdtWtLegacyMap = [ordered]@{
-    'wt-open'       = 'open'
-    'wt-warmup'     = 'warmup'
-    'wt-add'        = 'add'
-    'wt-clean'      = 'remove'
-    'wt-list'       = 'status'
-    'edt-wt-open'   = 'open'
-    'edt-wt-warmup' = 'warmup'
-    'edt-wt-add'    = 'add'
-    'edt-wt-clean'  = 'remove'
-    'edt-wt-list'   = 'status'
-}
-
-foreach ($legacy in $script:EdtWtLegacyMap.GetEnumerator()) {
-    $body = @"
-[CmdletBinding(SupportsShouldProcess)]
-param([Parameter(ValueFromRemainingArguments = `$true)][string[]]`$Arguments)
-`$p = @{ LegacyName = '$($legacy.Key)'; Subcommand = '$($legacy.Value)' }
-if (`$Arguments) { `$p['Arguments'] = `$Arguments }
-if (`$PSBoundParameters.ContainsKey('WhatIf')) { `$p['WhatIf'] = `$PSBoundParameters['WhatIf'] }
-if (`$PSBoundParameters.ContainsKey('Confirm')) { `$p['Confirm'] = `$PSBoundParameters['Confirm'] }
-Invoke-EdtWtLegacyCommand @p
-"@
-    Set-Item -Path "function:script:$($legacy.Key)" -Value ([scriptblock]::Create($body))
-}
 
 Register-EdtWtCompleters

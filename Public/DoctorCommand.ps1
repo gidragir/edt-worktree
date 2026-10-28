@@ -12,7 +12,7 @@ function Test-EdtEnvironment {
         Только чтение: ничего не пишет, не запускает процессов и не ходит в сеть.
         Возвращает строки Check, Status (ok|warn|error), Detail, Fix. Не бросает
         исключений на пустом или повреждённом состоянии - такое состояние это
-        строка error. Код возврата 1 при наличии error выставляет диспетчер edt.
+        строка error. Код возврата 1 при наличии error выставляет bin/edt.ps1.
     .EXAMPLE
         Test-EdtEnvironment | Format-Table -AutoSize
     #>

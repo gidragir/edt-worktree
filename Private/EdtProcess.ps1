@@ -169,7 +169,7 @@ function Split-EdtWtArguments {
         [Parameter(Position = 0)]
         [string[]]$Arguments,
 
-        [string[]]$ValueKeys = @('-GuiMaxHeap', '-MaxHeap', '-Extensions', '-ProjectName', '-WorktreeId')
+        [string[]]$ValueKeys = @('-Extensions', '-RefBranch', '-CfProject', '-ReposRoot', '-WorktreesRoot', '-WorkspacesRoot')
     )
 
     $positional = @()
@@ -200,7 +200,10 @@ function Split-EdtWtArguments {
 
 function Resolve-EdtWtWrapperArgs {
     <#
-      Разбирает аргументы быстрых обёрток (wt-open, wt-add, wt-warmup).
+      Разбирает ключи подкоманд edt (стили -NoGui и --no-gui). Возвращает:
+      Extensions - позиционные значения (имя историческое), Flags - переключатели,
+      Values - ключи со значением, Used - имена заданных ключей (для проверки
+      допустимости в диспетчере). Allowed нужен только для подсказки в ошибке.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
@@ -209,48 +212,80 @@ function Resolve-EdtWtWrapperArgs {
         [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Allowed
     )
 
-    $flags = @{ Refresh = $false; NoGui = $false; Force = $false; Validate = $false; WhatIf = $false; Yes = $false; SkipGit = $false }
-    $values = @{ MaxHeap = $null; GuiMaxHeap = $null }
-    $extensions = @()
+    $flags = @{
+        Refresh = $false; NoGui = $false; SkipGit = $false; Purge = $false
+        WhatIf = $false; Yes = $false; NoProjects = $false
+    }
+    $values = @{
+        Extensions = $null; RefBranch = $null; CfProject = $null
+        ReposRoot = $null; WorktreesRoot = $null; WorkspacesRoot = $null
+    }
+    $positional = @()
+    $used = [System.Collections.Generic.List[string]]::new()
+
+    # Ключи-переключатели: регулярное выражение имени -> имя в Flags.
+    $flagMap = [ordered]@{
+        '^--?refresh$|^-r$'            = 'Refresh'
+        '^--?no-?gui$'                 = 'NoGui'
+        '^--?skip-?git$'               = 'SkipGit'
+        '^--?purge$'                   = 'Purge'
+        '^--?what-?if$|^--?dry-?run$'  = 'WhatIf'
+        '^--?yes$'                     = 'Yes'
+        '^--?no-?projects$'            = 'NoProjects'
+    }
+    # Ключи со значением.
+    $valueMap = [ordered]@{
+        '^--?extensions$'                = 'Extensions'
+        '^--?ref-?branch$'               = 'RefBranch'
+        '^--?cf-?project$'               = 'CfProject'
+        '^--?repos-?root$'               = 'ReposRoot'
+        '^--?worktrees-?root$'           = 'WorktreesRoot'
+        '^--?workspaces-?root$'          = 'WorkspacesRoot'
+    }
 
     $list = @($Items | Where-Object { $_ })
     for ($i = 0; $i -lt $list.Count; $i++) {
         $item = $list[$i]
 
         if (-not $item.StartsWith('-')) {
-            $extensions += $item
+            $positional += $item
             continue
         }
 
         $name = $item.ToLower()
-        $takeValue = {
-            if (($i + 1) -ge $list.Count) { throw "Ключ '$item' требует значения." }
-            $script:__i = $i + 1
-            return $list[$i + 1]
-        }
+        $matched = $false
 
-        switch -Regex ($name) {
-            '^--?refresh$|^-r$' { $flags.Refresh = $true; break }
-            '^--?no-?gui$' { $flags.NoGui = $true; break }
-            '^--?force$|^-f$' { $flags.Force = $true; break }
-            '^--?validate$' { $flags.Validate = $true; break }
-            '^--?skip-?git$' { $flags.SkipGit = $true; break }
-            '^--?what-?if$|^--?dry-?run$' { $flags.WhatIf = $true; break }
-            '^--?yes$|^--?confirm:\$false$' { $flags.Yes = $true; break }
-            '^--?gui-?max-?heap$|^--?gui-?heap$' { $values.GuiMaxHeap = & $takeValue; $i++; break }
-            '^--?max-?heap$' { $values.MaxHeap = & $takeValue; $i++; break }
-            '^--?extensions$' { $extensions += (& $takeValue); $i++; break }
-            default {
-                $hint = if ($Allowed.Count -gt 0) { "Доступны: $($Allowed -join ', ')." } else { 'Эта подкоманда ключей не принимает.' }
-                throw "Неизвестный ключ '$item'. $hint"
+        foreach ($entry in $flagMap.GetEnumerator()) {
+            if ($name -match $entry.Key) {
+                $flags[$entry.Value] = $true
+                if (-not $used.Contains($entry.Value)) { $used.Add($entry.Value) }
+                $matched = $true
+                break
             }
         }
+        if ($matched) { continue }
+
+        foreach ($entry in $valueMap.GetEnumerator()) {
+            if ($name -match $entry.Key) {
+                if (($i + 1) -ge $list.Count -or $list[$i + 1].StartsWith('-')) { throw "Ключ '$item' требует значения." }
+                $i++
+                $values[$entry.Value] = if ($entry.Value -eq 'Extensions') { [string[]]@($list[$i] -split '[,\s]+' | Where-Object { $_ }) } else { $list[$i] }
+                if (-not $used.Contains($entry.Value)) { $used.Add($entry.Value) }
+                $matched = $true
+                break
+            }
+        }
+        if ($matched) { continue }
+
+        $hint = if ($Allowed.Count -gt 0) { "Доступны: $($Allowed -join ', ')." } else { 'Эта подкоманда ключей не принимает.' }
+        throw "Неизвестный ключ '$item'. $hint"
     }
 
     return [PSCustomObject]@{
-        Extensions = $extensions
+        Extensions = $positional
         Flags      = $flags
         Values     = $values
+        Used       = $used.ToArray()
     }
 }
 

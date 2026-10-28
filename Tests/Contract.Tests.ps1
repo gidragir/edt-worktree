@@ -17,7 +17,6 @@ BeforeAll {
         'Invoke-EdtWorktreeClean'
         'Get-EdtWorktreeList'
         'Get-EdtWtContext'
-        'Invoke-EdtWtLegacyCommand'
         'Update-EdtWtReference'
         'Get-EdtConfig'
         'Set-EdtConfig'
@@ -31,15 +30,12 @@ BeforeAll {
         'Uninstall-EdtWorktree'
         'Test-EdtEnvironment'
     )
-    $script:Legacy = @('wt-open', 'wt-warmup', 'wt-add', 'wt-clean', 'wt-list',
-        'edt-wt-open', 'edt-wt-warmup', 'edt-wt-add', 'edt-wt-clean', 'edt-wt-list')
 }
 
 Describe 'Контракт модуля' {
     It 'экспортирует ровно заявленные функции' {
         $exported = (Get-Command -Module EdtWorktree -CommandType Function).Name
-        $expected = @($script:Public + $script:Legacy)
-        ($exported | Sort-Object) | Should -Be ($expected | Sort-Object)
+        ($exported | Sort-Object) | Should -Be ($script:Public | Sort-Object)
     }
 
     It 'короткое имя команды одно: edt' {
@@ -52,13 +48,19 @@ Describe 'Контракт модуля' {
     It 'подкоманды edt покрывают все операции' {
         $set = (Get-Command Invoke-EdtCommand).Parameters['Command'].Attributes |
             Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
-        $set.ValidValues | Should -Be @('open', 'warmup', 'add', 'remove', 'status', 'update', 'self-update', 'vr', 'init', 'config', 'help')
+        $set.ValidValues | Should -Be @('open', 'warmup', 'add', 'remove', 'status', 'update', 'vr', 'setup', 'project', 'config', 'doctor', 'self-update', 'uninstall', 'help')
     }
 
-    It 'старые имена работают и предупреждают о замене' {
-        foreach ($name in $script:Legacy) {
-            Get-Command $name -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
+    It 'старых имён нет' {
+        Get-Command 'wt-open', 'edt-wt-open', 'wt-list', 'edt-wt-clean', 'Invoke-EdtWtLegacyCommand' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+
+    It 'версия модуля 3.0.0' {
+        (Get-Module EdtWorktree).Version.ToString() | Should -Be '3.0.0'
+    }
+
+    It 'у warmup нет ключей кроме ProjectName и общих' {
+        (Get-Command Invoke-EdtWorktreeWarmup).Parameters.Keys | Should -Not -Contain 'Validate'
     }
 
     It 'не выносит приватные помощники наружу' {
@@ -111,5 +113,71 @@ Describe 'Контракт модуля' {
             $keys | Should -Not -Contain 'GuiMaxHeap'
         }
         (Get-Command Invoke-EdtWorktreeOpen).Parameters.Keys | Should -Not -Contain 'Extensions'
+    }
+
+    It 'edt project ext p +cfe_b -cfe_a доходит до Set-EdtProjectExtension' {
+        # -cfe_a не ключ, а правка: разбор +/- идёт до общего парсера.
+        Mock -ModuleName EdtWorktree Set-EdtProjectExtension {}
+        Invoke-EdtCommand project ext p +cfe_b -cfe_a
+        Should -Invoke Set-EdtProjectExtension -ModuleName EdtWorktree -Exactly 1 -ParameterFilter {
+            $Name -eq 'p' -and ($Change -join ',') -eq '+cfe_b,-cfe_a'
+        }
+    }
+
+    Context 'bin/edt.ps1 (дочерний процесс)' {
+        BeforeAll {
+            # Дочерний pwsh наследует окружение: конфиг обязан быть временным.
+            $script:Bin = (Resolve-Path (Join-Path $PSScriptRoot '..\bin\edt.ps1')).Path
+            $script:BinRoot = $script:TestCfg.Root
+            $env:EDT_CONFIG_PATH | Should -BeLike "$($script:BinRoot)*"
+            $env:EDT_LEGACY_CONFIG_PATH | Should -BeLike "$($script:BinRoot)*"
+            $cfg = @{
+                version = 3
+                paths   = @{
+                    repos_root      = Join-Path $script:BinRoot 'нет\repos'
+                    worktrees_root  = Join-Path $script:BinRoot 'нет\wt'
+                    workspaces_root = Join-Path $script:BinRoot 'нет\ws'
+                }
+            }
+            [IO.File]::WriteAllText($env:EDT_CONFIG_PATH, ($cfg | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+        }
+
+        It 'config path печатает временный файл (изоляция дочернего процесса)' {
+            $out = (& pwsh -NoProfile -File $script:Bin config path 2>&1 | Out-String).Trim()
+            $LASTEXITCODE | Should -Be 0
+            $out | Should -Be $env:EDT_CONFIG_PATH
+        }
+
+        It 'doctor возвращает 1 при ошибке' {
+            $before = [IO.File]::ReadAllBytes($env:EDT_CONFIG_PATH)
+            $out = & pwsh -NoProfile -File $script:Bin doctor 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 1
+            $out | Should -BeLike '*paths.repos_root*'
+            [IO.File]::ReadAllBytes($env:EDT_CONFIG_PATH) | Should -Be $before
+        }
+
+        It 'неизвестная подкоманда - код 2, help - код 0' {
+            & pwsh -NoProfile -File $script:Bin nonsense *>$null
+            $LASTEXITCODE | Should -Be 2
+            & pwsh -NoProfile -File $script:Bin help *>$null
+            $LASTEXITCODE | Should -Be 0
+        }
+
+        It 'список подкоманд bin совпадает с ValidateSet диспетчера' {
+            $text = Get-Content -LiteralPath $script:Bin -Raw -Encoding utf8
+            $block = [regex]::Match($text, '\$known = @\(([^)]*)\)')
+            $block.Success | Should -BeTrue
+            $known = @([regex]::Matches($block.Groups[1].Value, "'([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+            $set = (Get-Command Invoke-EdtCommand).Parameters['Command'].Attributes |
+                Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+            $known | Should -Be @($set.ValidValues)
+        }
+
+        It 'в справке и bin нет ключей прежних версий' {
+            $text = (Get-Content -LiteralPath $script:Bin -Raw -Encoding utf8)
+            $usage = & (Get-Module EdtWorktree) { Show-EdtWtUsage } 6>&1 | Out-String
+            $text | Should -Not -Match 'GuiMaxHeap|-MaxHeap|-Validate|wt-open|edt-wt|edt init'
+            $usage | Should -Not -Match 'GuiMaxHeap|-MaxHeap|-Validate|-Force|wt-open|edt-wt|edt init'
+        }
     }
 }

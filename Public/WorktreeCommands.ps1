@@ -569,33 +569,3 @@ function Invoke-EdtWorktreeClean {
 
     Write-Host "✓ Очистка завершена: $($ctx.ProjectId)/$targetId" -ForegroundColor Green
 }
-
-# ------------------------------------------------------------------------------
-# 3. Совместимость с legacy-именами
-# ------------------------------------------------------------------------------
-
-function Invoke-EdtWtLegacyCommand {
-    <#
-    .SYNOPSIS
-        Совместимость со старыми именами команд (wt-* и edt-wt-*).
-    #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '')]
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [Parameter(Mandatory)][string]$LegacyName,
-        [Parameter(Mandatory)][string]$Subcommand,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
-    )
-
-    if (-not $script:EdtWtLegacyWarned.Contains($LegacyName)) {
-        Write-Warning "Команда '$LegacyName' устарела, используйте 'edt $Subcommand'. Список подкоманд: edt help"
-        [void]$script:EdtWtLegacyWarned.Add($LegacyName)
-    }
-
-    $params = @{ Command = $Subcommand }
-    if ($Arguments) { $params['Arguments'] = $Arguments }
-    if ($PSBoundParameters.ContainsKey('WhatIf')) { $params['WhatIf'] = $PSBoundParameters['WhatIf'] }
-    if ($PSBoundParameters.ContainsKey('Confirm')) { $params['Confirm'] = $PSBoundParameters['Confirm'] }
-
-    Invoke-EdtCommand @params
-}
