@@ -36,6 +36,19 @@ function Resolve-EdtWtExtensionRef {
     throw "Проект EDT '$Ref' не найден в клоне. Найдены: $list."
 }
 
+function Set-EdtWtProjectProperty {
+    <# Записывает ключ в определение проекта, даже если его там не было (StrictMode); остальные ключи не трогает. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$Def,
+        [Parameter(Mandatory)][string]$Name,
+        [AllowNull()]$Value
+    )
+
+    Add-Member -InputObject $Def -MemberType NoteProperty -Name $Name -Value $Value -Force
+}
+
 function Get-EdtWtCloneBranch {
     <# Текущая ветка клона; $null, если клона нет или HEAD отсоединён. #>
     [CmdletBinding()]
@@ -346,7 +359,7 @@ function Set-EdtProjectExtension {
     }
 
     if ($PSCmdlet.ShouldProcess($Name, "Рабочие расширения: $(@($new) -join ', ')")) {
-        $def.extensions = [string[]]@($new)
+        Set-EdtWtProjectProperty -Def $def -Name 'extensions' -Value ([string[]]@($new))
         Save-EdtWtConfig -Config $cfg | Out-Null
         Write-Host "✓ Рабочие расширения проекта '$Name': $(@($new).Count)." -ForegroundColor Green
     }
@@ -390,8 +403,8 @@ function Set-EdtProject {
     if ($RefBranch) { $what += "ветка $RefBranch" }
     if ($cf) { $what += "конфигурация $cf" }
     if ($PSCmdlet.ShouldProcess($Name, "Изменить: $($what -join ', ')")) {
-        if ($RefBranch) { $def.ref_branch = $RefBranch }
-        if ($cf) { $def.cf_project = $cf }
+        if ($RefBranch) { Set-EdtWtProjectProperty -Def $def -Name 'ref_branch' -Value $RefBranch }
+        if ($cf) { Set-EdtWtProjectProperty -Def $def -Name 'cf_project' -Value $cf }
         Save-EdtWtConfig -Config $cfg | Out-Null
         Write-Host "✓ Проект '$Name' обновлён." -ForegroundColor Green
     }

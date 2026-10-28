@@ -163,6 +163,30 @@ Describe 'Команды edt project' {
         }
     }
 
+    Context 'Определения проектов без необязательных ключей' {
+        BeforeEach {
+            # Рукописный или перенесённый конфиг: у проекта нет extensions / cf_project, а лишний ключ должен уцелеть.
+            $json = '{"version":3,"paths":{"repos_root":' + (ConvertTo-Json $script:ReposRoot) + '},"projects":{"two":{"custom":"keep"},"p":{"ref_branch":"main"}}}'
+            [IO.File]::WriteAllText($script:cfg, $json, [Text.UTF8Encoding]::new($false))
+        }
+        It 'Set-EdtProject дописывает ref_branch и cf_project и сохраняет чужие ключи' {
+            Set-EdtProject -Name 'two' -RefBranch 'pre-prod' -CfProject 'src/cf2'
+            $p = (Read-TestConfig).projects.two
+            $p.ref_branch | Should -Be 'pre-prod'
+            $p.cf_project | Should -Be 'src/cf2'
+            $p.custom | Should -Be 'keep'
+        }
+        It 'Set-EdtProjectExtension дописывает extensions' {
+            Set-EdtProjectExtension -Name 'p' -Change '+cfe_a'
+            $p = (Read-TestConfig).projects.p
+            $p.extensions | Should -Be @('src/cfe_a')
+            $p.ref_branch | Should -Be 'main'
+        }
+        It 'Get-EdtProject не падает на пустом определении' {
+            (Get-EdtProject -Name 'two').Extensions | Should -Be '0/1'
+        }
+    }
+
     Context 'Set-EdtProject' {
         BeforeEach { Add-EdtProject -Name 'two' -Extensions 'none' -CfProject 'src/cf1' -Confirm:$false }
 
