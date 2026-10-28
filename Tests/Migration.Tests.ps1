@@ -28,7 +28,7 @@ AfterAll {
 
 Describe 'Миграция конфига 2.x -> v3' {
     BeforeEach {
-        Remove-Item -LiteralPath $script:CfgPath, "$script:CfgPath.v2.bak", $script:LegacyPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $script:CfgPath, "$script:CfgPath.v2.bak", "$script:CfgPath.v2.bak.1", $script:LegacyPath -Force -ErrorAction SilentlyContinue
     }
 
     Context 'ConvertFrom-EdtWtV2Config' {
@@ -135,6 +135,34 @@ Describe 'Миграция конфига 2.x -> v3' {
             Test-Path "$script:CfgPath.v2.bak" | Should -BeFalse
         }
 
+        It 'битый legacy-файл: ошибка, ничего не записано (ни config.json, ни .bak)' {
+            Set-Content -LiteralPath $script:LegacyPath -Value '{ broken' -Encoding utf8NoBOM
+            $legacyHash = (Get-FileHash -LiteralPath $script:LegacyPath).Hash
+            { & $m { Get-EdtWtConfig } } | Should -Throw '*Конфиг повреждён*'
+            Test-Path $script:CfgPath | Should -BeFalse
+            Test-Path "$script:CfgPath.v2.bak" | Should -BeFalse
+            (Get-FileHash -LiteralPath $script:LegacyPath).Hash | Should -Be $legacyHash
+        }
+
+        It 'битый legacy при существующем v2 config.json: файл не изменён, бэкапа нет' {
+            Set-Content -LiteralPath $script:CfgPath -Value $script:V2Primary -Encoding utf8NoBOM
+            Set-Content -LiteralPath $script:LegacyPath -Value '[1,2]' -Encoding utf8NoBOM
+            $before = (Get-FileHash -LiteralPath $script:CfgPath).Hash
+            { & $m { Get-EdtWtConfig } } | Should -Throw '*Конфиг повреждён*'
+            (Get-FileHash -LiteralPath $script:CfgPath).Hash | Should -Be $before
+            Test-Path "$script:CfgPath.v2.bak" | Should -BeFalse
+        }
+
+        It 'существующий .v2.bak не перезаписывается' {
+            Set-Content -LiteralPath $script:CfgPath -Value $script:V2Primary -Encoding utf8NoBOM
+            Set-Content -LiteralPath "$script:CfgPath.v2.bak" -Value 'OLD BACKUP' -Encoding utf8NoBOM
+            $oldHash = (Get-FileHash -LiteralPath "$script:CfgPath.v2.bak").Hash
+            $v2Hash = (Get-FileHash -LiteralPath $script:CfgPath).Hash
+            (& $m { Get-EdtWtConfig 6>$null }).version | Should -Be 3
+            (Get-FileHash -LiteralPath "$script:CfgPath.v2.bak").Hash | Should -Be $oldHash
+            Test-Path "$script:CfgPath.v2.bak.1" | Should -BeTrue
+            (Get-FileHash -LiteralPath "$script:CfgPath.v2.bak.1").Hash | Should -Be $v2Hash
+        }
         It 'v3-файл не мигрируется' {
             Set-Content -LiteralPath $script:LegacyPath -Value $script:V2Legacy -Encoding utf8NoBOM
             Set-Content -LiteralPath $script:CfgPath -Value '{"version":3,"paths":{"repos_root":"Q"}}' -Encoding utf8NoBOM

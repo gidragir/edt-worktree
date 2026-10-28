@@ -28,7 +28,7 @@ function Read-EdtWtJsonObject {
     } catch {
         $problem = $_.Exception.Message
     }
-    if ($problem) { throw "Конфиг повреждён: ${Path}: $problem." }
+    if ($problem) { throw "Конфиг повреждён: ${Path}: $problem. Исправьте файл или удалите его." }
     return $obj
 }
 
@@ -179,15 +179,10 @@ function Invoke-EdtWtConfigMigration {
     else { Join-Path $HOME '.config\1c\projects.json' }
 
     $primary = Read-EdtWtJsonObject -Path $cfgPath
-    $legacy = $null
-    $legacyProblem = $null
-    try { $legacy = Read-EdtWtJsonObject -Path $legacyPath } catch { $legacyProblem = $_.Exception.Message }
+    # Битый legacy-файл не пропускаем: иначе проекты молча потеряются. Ничего не пишем.
+    $legacy = Read-EdtWtJsonObject -Path $legacyPath
 
-    if ($null -eq $primary -and $null -eq $legacy -and -not $legacyProblem) { return $null }
-    if ($null -eq $primary -and $null -eq $legacy) {
-        Write-Host "Миграция: $legacyProblem Файл пропущен." -ForegroundColor Yellow
-        return $null
-    }
+    if ($null -eq $primary -and $null -eq $legacy) { return $null }
 
     $reposRoot = Get-EdtWtProperty (Get-EdtWtProperty $primary 'paths') 'projects_root'
     if (-not $reposRoot) { $reposRoot = (New-EdtWtDefaultConfig).paths.repos_root }
@@ -197,10 +192,13 @@ function Invoke-EdtWtConfigMigration {
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add('Миграция конфига 2.x -> 3.0')
     if (Test-Path -LiteralPath $cfgPath -PathType Leaf) {
-        Copy-Item -LiteralPath $cfgPath -Destination "$cfgPath.v2.bak" -Force
-        $lines.Add("  Копия прежнего config.json: $cfgPath.v2.bak")
+        # Существующий бэкап не перезаписываем: берём .v2.bak.1, .v2.bak.2, ...
+        $bak = "$cfgPath.v2.bak"
+        $i = 0
+        while (Test-Path -LiteralPath $bak) { $i++; $bak = "$cfgPath.v2.bak.$i" }
+        Copy-Item -LiteralPath $cfgPath -Destination $bak
+        $lines.Add("  Копия прежнего config.json: $bak")
     }
-    if ($legacyProblem) { $lines.Add("  $legacyProblem Legacy-файл пропущен.") }
     foreach ($n in $result.Notes) { $lines.Add("  $n") }
 
     $saved = Save-EdtWtConfig -Config $result.Config
