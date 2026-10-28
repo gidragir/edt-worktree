@@ -209,16 +209,21 @@ function Get-EdtWtConfig {
     }
 
     $userJson = $null
+    $problem = $null
     try {
         $raw = Get-Content -Raw -LiteralPath $path -Encoding UTF8
         if (-not [string]::IsNullOrWhiteSpace($raw)) {
-            $userJson = $raw | ConvertFrom-Json -ErrorAction Stop
+            $userJson = $raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
+            if ($null -eq $userJson -or $userJson.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') { $problem = 'корнем конфига должен быть JSON-объект' }
         }
     } catch {
-        throw "Конфиг повреждён: ${path}: $($_.Exception.Message). Исправьте файл или удалите его и выполните edt setup."
+        $problem = $_.Exception.Message
+    }
+    if ($problem) {
+        throw "Конфиг повреждён: ${path}: $problem. Исправьте файл или удалите его и выполните edt setup."
     }
 
-    if ($userJson -isnot [PSCustomObject]) { return $config }
+    if ($null -eq $userJson) { return $config }
     return (Merge-EdtWtConfigObject -Base $config -Override $userJson)
 }
 

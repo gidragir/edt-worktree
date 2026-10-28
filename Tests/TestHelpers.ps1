@@ -23,3 +23,31 @@ function Use-EdtWtTestConfig {
     $env:EDT_LEGACY_CONFIG_PATH = Join-Path $Root 'legacy-projects.json'
     return $path
 }
+
+function Enter-EdtWtTestConfig {
+    <# Создаёт временный корень, уводит в него конфиг; возвращает состояние для Exit-EdtWtTestConfig. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [OutputType([PSCustomObject])]
+    param()
+
+    $state = [PSCustomObject]@{
+        Root       = New-EdtWtTestRoot
+        Path       = $null
+        PrevConfig = $env:EDT_CONFIG_PATH
+        PrevLegacy = $env:EDT_LEGACY_CONFIG_PATH
+    }
+    $state.Path = Use-EdtWtTestConfig -Root $state.Root
+    return $state
+}
+
+function Exit-EdtWtTestConfig {
+    <# Восстанавливает прежние EDT_CONFIG_PATH / EDT_LEGACY_CONFIG_PATH и удаляет временный корень. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    param([Parameter(Mandatory)][PSCustomObject]$State)
+
+    $env:EDT_CONFIG_PATH = $State.PrevConfig
+    $env:EDT_LEGACY_CONFIG_PATH = $State.PrevLegacy
+    if (Test-Path -LiteralPath $State.Root) {
+        Remove-Item -LiteralPath $State.Root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

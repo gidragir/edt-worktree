@@ -1,19 +1,15 @@
 ﻿BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
-    $script:Root = New-EdtWtTestRoot
-    $script:CfgPath = Use-EdtWtTestConfig -Root $script:Root
+    $script:TestCfg = Enter-EdtWtTestConfig
+    $script:Root = $script:TestCfg.Root
+    $script:CfgPath = $script:TestCfg.Path
     Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 }
 
 AfterAll {
-    Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
-    Remove-Item env:EDT_LEGACY_CONFIG_PATH -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $script:Root) {
-        Remove-Item -LiteralPath $script:Root -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    Exit-EdtWtTestConfig -State $script:TestCfg
 }
-
 Describe 'Конфигурация EdtWorktree v3' {
     BeforeEach {
         Remove-Item -LiteralPath $script:CfgPath -Force -ErrorAction SilentlyContinue
@@ -46,6 +42,29 @@ Describe 'Конфигурация EdtWorktree v3' {
             '{ broken' | Set-Content $script:CfgPath
             { & $m { Get-EdtWtConfig } } | Should -Throw '*Конфиг повреждён*'
             Get-Content $script:CfgPath -Raw | Should -Match '\{ broken'
+        }
+
+        It 'JSON с корнем не-объектом: та же ошибка' {
+            foreach ($body in '[]', '"x"', '123') {
+                [IO.File]::WriteAllText($script:CfgPath, $body)
+                { & $m { Get-EdtWtConfig } } | Should -Throw '*Конфиг повреждён*'
+            }
+        }
+
+        It 'пустой файл даёт дефолты' {
+            [IO.File]::WriteAllText($script:CfgPath, "  `n")
+            (& $m { Get-EdtWtConfig }).version | Should -Be 3
+        }
+
+        It 'Set-EdtConfig и Initialize-EdtConfig не перезаписывают повреждённый файл' {
+            foreach ($body in '{ broken', '[]', '"x"') {
+                [IO.File]::WriteAllText($script:CfgPath, $body)
+                $before = [IO.File]::ReadAllBytes($script:CfgPath)
+                { Set-EdtConfig -MaxHeap 8g -Confirm:$false } | Should -Throw '*Конфиг повреждён*'
+                { Initialize-EdtConfig -NonInteractive } | Should -Throw '*Конфиг повреждён*'
+                { & $m { Save-EdtWtConfig -Config (Get-EdtWtConfig) } } | Should -Throw '*Конфиг повреждён*'
+                [IO.File]::ReadAllBytes($script:CfgPath) | Should -Be $before
+            }
         }
     }
 

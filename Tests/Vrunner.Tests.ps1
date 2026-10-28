@@ -1,15 +1,10 @@
 ﻿BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
-    $script:HygieneRoot = New-EdtWtTestRoot
-    Use-EdtWtTestConfig -Root $script:HygieneRoot | Out-Null
+    $script:TestCfg = Enter-EdtWtTestConfig
 }
 
 AfterAll {
-    Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
-    Remove-Item env:EDT_LEGACY_CONFIG_PATH -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $script:HygieneRoot) {
-        Remove-Item -LiteralPath $script:HygieneRoot -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    Exit-EdtWtTestConfig -State $script:TestCfg
 }
 
 BeforeAll {
