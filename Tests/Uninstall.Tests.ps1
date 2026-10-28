@@ -152,6 +152,25 @@ Describe 'Uninstall-EdtWorktree -Purge: защитные проверки' {
         Test-Path -LiteralPath $repo | Should -BeFalse
     }
 
+It 'если состояние git проверить нельзя, каталог не удаляется (fail closed), ссылка удаляется' {
+        $repo = (New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'unverif').RepoPath
+        New-Item -ItemType Junction -Path $script:link -Target $repo | Out-Null
+        Mock -ModuleName EdtWorktree -CommandName Invoke-EdtWtGit -MockWith { $global:LASTEXITCODE = 128; return 'fatal: detected dubious ownership' }
+        Uninstall-EdtWorktree -Purge -Confirm:$false -WarningVariable w -WarningAction SilentlyContinue 6>$null
+        Test-Path -LiteralPath $script:link | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $repo 'README.md') | Should -BeTrue
+        ($w -join ' ') | Should -Match 'не удалось проверить'
+    }
+
+    It 'если git не найден, каталог с .git не удаляется' {
+        $repo = (New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'nogit').RepoPath
+        New-Item -ItemType Junction -Path $script:link -Target $repo | Out-Null
+        Mock -ModuleName EdtWorktree -CommandName Get-Command -ParameterFilter { $Name -eq 'git' } -MockWith { $null }
+        Uninstall-EdtWorktree -Purge -Confirm:$false -WarningAction SilentlyContinue 6>$null
+        Test-Path -LiteralPath $script:link | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $repo 'README.md') | Should -BeTrue
+    }
+
     It '-Purge удаляет только файл конфига и его копии; чужие файлы и каталог остаются' {
         $shared = Join-Path $script:TestCfg.Root 'shared'
         New-Item -ItemType Directory -Path $shared | Out-Null

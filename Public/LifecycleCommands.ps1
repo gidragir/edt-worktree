@@ -188,17 +188,26 @@ function Remove-EdtWtModuleLink {
 
 function Test-EdtWtDirtyWorkTree {
     <#
-      $true, если Path - рабочее дерево git с незафиксированными изменениями (только чтение).
-      Не git-каталог или git недоступен - $false.
+      Состояние рабочего дерева git (только чтение): 'clean' (или это не git-каталог),
+      'dirty' (есть незафиксированные изменения) или 'unverified' (.git есть, но git
+      недоступен или status завершился ошибкой). Проверка закрывается в сторону отказа:
+      при неопределённости каталог считается занятым.
     #>
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([string])]
     param([Parameter(Mandatory)][string]$Path)
 
-    if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) { return $false }
-    if (-not (Get-Command -Name git -CommandType Application -ErrorAction SilentlyContinue)) { return $false }
-    $out = Invoke-EdtWtGit -C $Path status --porcelain 2>$null
-    return [bool]$out
+    if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) { return 'clean' }
+    if (-not (Get-Command -Name git -CommandType Application -ErrorAction SilentlyContinue)) { return 'unverified' }
+    try {
+        $global:LASTEXITCODE = 0
+        $out = Invoke-EdtWtGit -C $Path status --porcelain 2>$null
+        if ($LASTEXITCODE -ne 0) { return 'unverified' }
+    } catch {
+        return 'unverified'
+    }
+    if ($out) { return 'dirty' }
+    return 'clean'
 }
 
 function Uninstall-EdtWorktree {
@@ -240,10 +249,12 @@ function Uninstall-EdtWorktree {
     if ($Purge) {
         if (-not $info.ViaLink) {
             Write-Warning "Каталог установки не удалён: ссылки модуля нет, а текущий каталог модуля ($($info.InstallDir)) может быть рабочим клоном. Удалите его вручную."
-        } elseif (Test-EdtWtDirtyWorkTree -Path $info.InstallDir) {
-            Write-Warning "Каталог установки не удалён: в нём есть незафиксированные изменения git ($($info.InstallDir)). Закоммитьте или уберите их (stash) либо удалите каталог вручную."
         } else {
-            $purgeInstall = $true
+            switch (Test-EdtWtDirtyWorkTree -Path $info.InstallDir) {
+                'dirty' { Write-Warning "Каталог установки не удалён: в нём есть незафиксированные изменения git ($($info.InstallDir)). Закоммитьте или уберите их (stash) либо удалите каталог вручную." }
+                'unverified' { Write-Warning "Каталог установки не удалён: не удалось проверить состояние git ($($info.InstallDir)). Проверьте каталог и удалите его вручную." }
+                default { $purgeInstall = $true }
+            }
         }
     }
 
