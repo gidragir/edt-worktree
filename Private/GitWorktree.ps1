@@ -5,6 +5,24 @@
 Set-StrictMode -Version Latest
 
 # ------------------------------------------------------------------------------
+# 0. Безопасный вызов Git с сохранением UTF-8
+# ------------------------------------------------------------------------------
+
+function Invoke-EdtWtGit {
+    <#
+      Выполняет git с принудительной установкой кодировки вывода UTF-8 и флагом core.quotepath=false.
+      Предотвращает искажение путей и веток с кириллицей (cp866/кракозябры ╨Ш╨╜╤В...).
+    #>
+    $prevEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        & git -c core.quotepath=false @args
+    } finally {
+        [Console]::OutputEncoding = $prevEnc
+    }
+}
+
+# ------------------------------------------------------------------------------
 # 1. Санитайзинг и форматирование имен
 # ------------------------------------------------------------------------------
 
@@ -41,7 +59,7 @@ function Get-EdtWtWorktreePathForBranch {
     )
     Push-Location -LiteralPath $RepoPath
     try {
-        $lines = git worktree list --porcelain 2>$null
+        $lines = Invoke-EdtWtGit worktree list --porcelain 2>$null
     } finally {
         Pop-Location
     }
@@ -141,18 +159,18 @@ function New-EdtWtWorktree {
     }
 
     Write-Host "==> Создание worktree: $branch" -ForegroundColor Cyan
-    git -C $repo fetch origin 2>&1 | Out-Null
-    git -C $repo worktree prune 2>&1 | Out-Null
+    Invoke-EdtWtGit -C $repo fetch origin 2>&1 | Out-Null
+    Invoke-EdtWtGit -C $repo worktree prune 2>&1 | Out-Null
 
-    git -C $repo show-ref --verify --quiet "refs/heads/$branch"
+    Invoke-EdtWtGit -C $repo show-ref --verify --quiet "refs/heads/$branch"
     $branchExists = ($LASTEXITCODE -eq 0)
 
     if ($branchExists) {
         Write-Host "    Ветка $branch уже есть — подключается." -ForegroundColor Gray
-        $out = git -C $repo worktree add $wtPath $branch 2>&1
+        $out = Invoke-EdtWtGit -C $repo worktree add $wtPath $branch 2>&1
     } else {
         Write-Host "    Ветка создаётся от $Base." -ForegroundColor Gray
-        $out = git -C $repo worktree add -b $branch $wtPath $Base 2>&1
+        $out = Invoke-EdtWtGit -C $repo worktree add -b $branch $wtPath $Base 2>&1
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -177,28 +195,28 @@ function Update-EdtWtBranch {
 
     Push-Location -LiteralPath $WorktreePath
     try {
-        $dirty = @(git status --porcelain 2>$null)
+        $dirty = @(Invoke-EdtWtGit status --porcelain 2>$null)
         if ($dirty.Count -gt 0) {
             return [PSCustomObject]@{ Success = $false; Message = "в каталоге ветки есть незакоммиченные изменения ($($dirty.Count) файлов)" }
         }
 
-        $current = (git rev-parse --abbrev-ref HEAD 2>$null)
+        $current = (Invoke-EdtWtGit rev-parse --abbrev-ref HEAD 2>$null)
         if ($current -ne $Branch) {
             return [PSCustomObject]@{ Success = $false; Message = "в каталоге ветки checkout на '$current', ожидалась '$Branch'" }
         }
 
-        $fetch = (git fetch --prune 2>&1)
+        $fetch = (Invoke-EdtWtGit fetch --prune 2>&1)
         if ($LASTEXITCODE -ne 0) {
             return [PSCustomObject]@{ Success = $false; Message = "git fetch не удался: $fetch" }
         }
 
-        $behind = (git rev-list --count "HEAD..origin/$Branch" 2>$null)
+        $behind = (Invoke-EdtWtGit rev-list --count "HEAD..origin/$Branch" 2>$null)
         if (-not $behind) { $behind = '0' }
         if ($behind -eq '0') {
             return [PSCustomObject]@{ Success = $true; Message = 'ветка уже актуальна' }
         }
 
-        $merge = (git merge --ff-only "origin/$Branch" 2>&1)
+        $merge = (Invoke-EdtWtGit merge --ff-only "origin/$Branch" 2>&1)
         if ($LASTEXITCODE -ne 0) {
             return [PSCustomObject]@{ Success = $false; Message = "перемотка невозможна (нужен ручной merge): $merge" }
         }

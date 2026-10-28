@@ -77,9 +77,9 @@ function Get-EdtWtChangedExtensions {
     Push-Location -LiteralPath $Context.WorktreePath
     try {
         $changed = @()
-        $st = git status --porcelain 2>$null
+        $st = Invoke-EdtWtGit status --porcelain 2>$null
         if ($st) { $changed += ($st | ForEach-Object { $_.Substring(3).Trim() }) }
-        $df = git diff --name-only "$($Context.ReferenceBranch)...HEAD" 2>$null
+        $df = Invoke-EdtWtGit diff --name-only "$($Context.ReferenceBranch)...HEAD" 2>$null
         if ($df) { $changed += $df }
     } finally {
         Pop-Location

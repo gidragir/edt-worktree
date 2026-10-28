@@ -12,10 +12,10 @@ $script:EdtWtModuleRoot = $PSScriptRoot
 # Порядок важен: переменные и конфигурация читаются первыми, затем остальные подсистемы.
 $loadOrder = @(
     # Приватные доменные подсистемы
+    (Join-Path $PSScriptRoot 'Private\GitWorktree.ps1')
     (Join-Path $PSScriptRoot 'Private\Configuration.ps1')
     (Join-Path $PSScriptRoot 'Private\EclipseLocation.ps1')
     (Join-Path $PSScriptRoot 'Private\EdtProcess.ps1')
-    (Join-Path $PSScriptRoot 'Private\GitWorktree.ps1')
     (Join-Path $PSScriptRoot 'Private\Workspace.ps1')
 
     # Публичные команды

@@ -190,14 +190,14 @@ function Update-EdtSelf {
         throw "Команда 'git' не найдена в PATH."
     }
 
-    $remotes = & $gitCmd.Source -C $repoDir remote
+    $remotes = Invoke-EdtWtGit -C $repoDir remote
     if (-not $remotes) {
         Write-Host "    ! В репозитории не настроен remote (удаленный сервер)." -ForegroundColor Yellow
         Write-Host "    Для включения автообновлений добавьте remote: git remote add origin <url>" -ForegroundColor Yellow
         return
     }
 
-    $out = & $gitCmd.Source -C $repoDir pull --ff-only 2>&1
+    $out = Invoke-EdtWtGit -C $repoDir pull --ff-only 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "    ✗ Ошибка git pull:" -ForegroundColor Red
         Write-Host "    $out" -ForegroundColor Red

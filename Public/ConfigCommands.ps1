@@ -275,7 +275,7 @@ function New-EdtProjectConfig {
     $targetDir = if ($Path) { $Path } else { (Get-Location).Path }
     Push-Location -LiteralPath $targetDir
     try {
-        $topLevel = (git rev-parse --show-toplevel 2>$null)
+        $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
         if (-not $topLevel) {
             throw "Каталог '$targetDir' не находится внутри git-репозитория."
         }

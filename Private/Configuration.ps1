@@ -93,7 +93,7 @@ function Get-EdtWtProjectIdFromRepo {
 
     $candidates = @()
 
-    $originUrl = (git config --get remote.origin.url 2>$null)
+    $originUrl = (Invoke-EdtWtGit config --get remote.origin.url 2>$null)
     if ($originUrl) {
         $leaf = ($originUrl -replace '\\', '/').TrimEnd('/').Split('/')[-1]
         $candidates += ($leaf -replace '\.git$', '')
@@ -165,14 +165,14 @@ function Get-EdtWtProjectConfigFile {
 
     Push-Location -LiteralPath $startPath
     try {
-        $topLevel = (& $gitCmd.Source rev-parse --show-toplevel 2>$null)
+        $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
         if ($topLevel) {
             $topLevel = ($topLevel -replace '/', '\')
             $projFile = Join-Path $topLevel ".edt-worktree.json"
             if (Test-Path -LiteralPath $projFile) { return $projFile }
 
             # Проверка git-common-dir для worktree
-            $gitCommonDir = (& $gitCmd.Source rev-parse --git-common-dir 2>$null)
+            $gitCommonDir = (Invoke-EdtWtGit rev-parse --git-common-dir 2>$null)
             if ($gitCommonDir) {
                 if (-not [System.IO.Path]::IsPathRooted($gitCommonDir)) {
                     $gitCommonDir = Join-Path $topLevel $gitCommonDir

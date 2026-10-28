@@ -40,18 +40,18 @@ function Get-EdtWtContext {
     $startPath = if ($Path) { $Path } else { (Get-Location).Path }
     Push-Location -LiteralPath $startPath
     try {
-        $topLevel = (git rev-parse --show-toplevel 2>$null)
+        $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
         if (-not $topLevel) { throw "Каталог '$startPath' не находится внутри git-репозитория." }
         $topLevel = ($topLevel -replace '/', '\')
 
-        $gitCommonDir = (git rev-parse --git-common-dir 2>$null)
+        $gitCommonDir = (Invoke-EdtWtGit rev-parse --git-common-dir 2>$null)
         if (-not $gitCommonDir) { throw "Не удалось определить git-common-dir для '$startPath'." }
         if (-not [System.IO.Path]::IsPathRooted($gitCommonDir)) {
             $gitCommonDir = Join-Path $topLevel $gitCommonDir
         }
         $gitCommonDir = ($gitCommonDir -replace '/', '\')
 
-        $branch = (git rev-parse --abbrev-ref HEAD 2>$null)
+        $branch = (Invoke-EdtWtGit rev-parse --abbrev-ref HEAD 2>$null)
 
         $projectId = $null
         if ($ProjectName) {
@@ -184,7 +184,7 @@ function Get-EdtWorktreeList {
 
     if ($ctx) {
         Push-Location -LiteralPath $ctx.WorktreePath
-        try { $lines = git worktree list --porcelain 2>$null } finally { Pop-Location }
+        try { $lines = Invoke-EdtWtGit worktree list --porcelain 2>$null } finally { Pop-Location }
         $cur = $null
         $map = @{}
         foreach ($line in $lines) {
@@ -605,8 +605,8 @@ function Invoke-EdtWorktreeClean {
         Write-Host "    Удаление git worktree..." -ForegroundColor Cyan
         Push-Location -LiteralPath $ctx.GitCommonDir
         try {
-            git worktree remove $wtPath --force
-            git worktree prune
+            Invoke-EdtWtGit worktree remove $wtPath --force
+            Invoke-EdtWtGit worktree prune
         } finally {
             Pop-Location
         }
@@ -614,7 +614,7 @@ function Invoke-EdtWorktreeClean {
     } else {
         Write-Host "    Каталог git worktree не найден — выполняется только prune." -ForegroundColor Gray
         Push-Location -LiteralPath $ctx.GitCommonDir
-        try { git worktree prune } finally { Pop-Location }
+        try { Invoke-EdtWtGit worktree prune } finally { Pop-Location }
     }
 
     Write-Host "✓ Очистка завершена: $($ctx.ProjectId)/$targetId" -ForegroundColor Green
