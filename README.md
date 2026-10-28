@@ -51,13 +51,13 @@ bash и cmd его не видят: для них нужен `~/.config/bin/edt.
    Хранит метаданные проекта: `cf_project`, `reference_branch`, `v8version`, `active_extensions`, `ibconnection`.
    Когда файл есть в репозитории, проект не требует ручной регистрации на машине разработчика.
 
-## Установка для разработчика
+## Установка
 
-В каталоге модуля запустить:
+В PowerShell 7:
 ```powershell
-pwsh -NoProfile -File scripts/install.ps1
+irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | iex
 ```
-Скрипт создаст ссылку модуля в `Documents\PowerShell\Modules\EdtWorktree`, добавит CLI-шим `bin` в `PATH` пользователя и запустит мастер `Initialize-EdtConfig` с автопоиском EDT.
+Установщик клонирует репозиторий в `%LOCALAPPDATA%\EdtWorktree`, создаёт ссылку модуля в `Documents\PowerShell\Modules\EdtWorktree`, добавляет `bin` в `PATH` пользователя и показывает проверки окружения (pwsh, git, 1C:EDT, JDK 17 с JavaFX). Затем выполните `edt setup`. Повторный запуск обновляет установку. Из клона: `pwsh -NoProfile -File install.ps1`.
 
 ## Раскладка на диске
 
