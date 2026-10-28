@@ -70,7 +70,12 @@ function New-EdtWtTestRepo {
     }
     $repo = Join-Path $Root $Name
     New-Item -ItemType Directory -Path $repo -Force | Out-Null
-    $git = { & git -c user.name=test -c user.email=test@example.com -c core.autocrlf=false -C $repo @args 2>&1 | Out-Null }
+    # Подписи и хуки пользователя не должны влиять на фикстуру; ошибка git - ошибка теста.
+    $noHooks = Join-Path $Root '.no-hooks'
+    $git = {
+        $out = & git -c user.name=test -c user.email=test@example.com -c core.autocrlf=false -c commit.gpgsign=false -c "core.hooksPath=$noHooks" -C $repo @args 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "git $args завершился с кодом ${LASTEXITCODE}: $out" }
+    }
 
     & $git init -q -b $Branch
     foreach ($rel in $Projects.Keys) {
@@ -87,7 +92,8 @@ function New-EdtWtTestRepo {
     $remote = $null
     if ($WithRemote) {
         $remote = Join-Path $Root "$Name.git"
-        & git init -q --bare -b $Branch $remote 2>&1 | Out-Null
+        $out = & git init -q --bare -b $Branch $remote 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "git init --bare завершился с кодом ${LASTEXITCODE}: $out" }
         & $git remote add origin $remote
         & $git push -q -u origin $Branch
     }

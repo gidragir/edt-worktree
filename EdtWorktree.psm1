@@ -25,6 +25,7 @@ $loadOrder = @(
     (Join-Path $PSScriptRoot 'Public\Invoke-EdtCommand.ps1')
     (Join-Path $PSScriptRoot 'Public\WorktreeCommands.ps1')
     (Join-Path $PSScriptRoot 'Public\ConfigCommands.ps1')
+    (Join-Path $PSScriptRoot 'Public\ProjectCommands.ps1')
     (Join-Path $PSScriptRoot 'Public\LifecycleCommands.ps1')
 
     # Автодополнение

@@ -22,6 +22,11 @@ BeforeAll {
         'Get-EdtConfig'
         'Set-EdtConfig'
         'Initialize-EdtConfig'
+        'Get-EdtProject'
+        'Add-EdtProject'
+        'Set-EdtProjectExtension'
+        'Set-EdtProject'
+        'Remove-EdtProject'
         'New-EdtProjectConfig'
         'Update-EdtSelf'
     )
