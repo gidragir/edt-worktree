@@ -104,8 +104,11 @@ function ConvertTo-EdtWtEclipseLocationUri {
     param([Parameter(Mandatory)][string]$Path)
 
     $normalized = $Path.TrimEnd('\') -replace '\\', '/'
-    $escaped = $normalized -replace ' ', '%20'
-    return "URI//file:/$($escaped.TrimStart('/'))"
+    # '%' экранируется первым, иначе повторно закодируются уже вставленные последовательности.
+    $escaped = $normalized.Replace('%', '%25')
+    foreach ($pair in @(' ', '#', '[', ']', '{', '}', '^', '`', '"', '<', '>', '|')) {
+        $escaped = $escaped.Replace($pair, ('%{0:X2}' -f [int][char]$pair))
+    }    return "URI//file:/$($escaped.TrimStart('/'))"
 }
 
 function ConvertFrom-EdtWtEclipseLocationUri {
@@ -154,10 +157,10 @@ function Repair-EdtWtWorkspaceLocations {
         if (-not $oldPath) { continue }
 
         # Проверяем, указывает ли путь уже на текущий worktree или workspace
-        $isTargetWs = $oldPath -like "$($WorkspaceDir.TrimEnd('\'))\*"
-        $isTargetWt = $oldPath -like "$($WorktreePath.TrimEnd('\'))\*"
-        $hasIllegalChars = ($parsed.Value -match ' ')
-
+        $isTargetWs = $oldPath.StartsWith($WorkspaceDir.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)
+        $isTargetWt = $oldPath.StartsWith($WorktreePath.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)
+        # URI невалиден, если повторное кодирование декодированного пути даёт другую строку
+        $hasIllegalChars = ((ConvertTo-EdtWtEclipseLocationUri -Path $oldPath) -cne $parsed.Value)
         # Если путь уже верный и формат URI валиден (нет пробелов) — перепривязка не нужна
         if (($isTargetWs -or $isTargetWt) -and -not $hasIllegalChars) {
             continue
@@ -168,7 +171,7 @@ function Repair-EdtWtWorkspaceLocations {
         if ($isTargetWs -or $isTargetWt) {
             # Путь уже правильный по смыслу, но в .location сохранён невалидный URI (например, с сырыми пробелами)
             $newPath = $oldPath
-        } elseif ($oldPath -like "$($ReferenceWsDir.TrimEnd('\'))\*") {
+        } elseif ($oldPath.StartsWith($ReferenceWsDir.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
             # 1. Служебные проекты внутри самого эталонного workspace (например EGit cmp)
             $newPath = Join-Path $WorkspaceDir $oldPath.Substring($ReferenceWsDir.TrimEnd('\').Length + 1)
         } else {

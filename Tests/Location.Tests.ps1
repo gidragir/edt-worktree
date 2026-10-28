@@ -98,6 +98,61 @@ Describe 'Чтение и перезапись .location' {
         $actual | Should -Be $expected
     }
 
+    It 'экранирует спецсимволы URI и оставляет кириллицу' {
+        $path = 'D:\Проекты\C# 50%\[x]'
+        $actual = & (Get-Module EdtWorktree) { param($p) ConvertTo-EdtWtEclipseLocationUri -Path $p } $path
+        $actual | Should -Be 'URI//file:/D:/Проекты/C%23%2050%25/%5Bx%5D'
+    }
+
+    It 'экранирует весь набор зарезервированных символов' {
+        $path = 'D:\a{b}^c`d"e<f>g|h'
+        $actual = & (Get-Module EdtWorktree) { param($p) ConvertTo-EdtWtEclipseLocationUri -Path $p } $path
+        $actual | Should -Be 'URI//file:/D:/a%7Bb%7D%5Ec%60d%22e%3Cf%3Eg%7Ch'
+    }
+
+    It 'round-trip To/From сохраняет путь' {
+        $path = 'D:\a b\#\%\{}'
+        $actual = & (Get-Module EdtWorktree) {
+            param($p)
+            ConvertFrom-EdtWtEclipseLocationUri -UriValue (ConvertTo-EdtWtEclipseLocationUri -Path $p)
+        } $path
+        $actual | Should -Be $path
+    }
+
+    It 'перепривязка работает для worktree с [ ] в пути' {
+        $base = Join-Path ([System.IO.Path]::GetTempPath()) ('loc_' + [guid]::NewGuid().ToString('N'))
+        $tempWs = Join-Path $base 'ws'
+        $refWs = Join-Path $base 'ref'
+        $tempWt = Join-Path $base 'wt [1] x'
+        $projDir = Join-Path $tempWs '.metadata\.plugins\org.eclipse.core.resources\.projects\cf'
+        $wtCfDir = Join-Path $tempWt 'src\cf'
+        New-Item -ItemType Directory -Path $projDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $wtCfDir -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $wtCfDir '.project') -Force | Out-Null
+        $locFile = Join-Path $projDir '.location'
+        # Старая привязка на другой worktree: поиск хвоста должен найти src\cf в текущем
+        New-TestLocationFile -Path $locFile -Uri 'URI//file:/D:/old/pre-prod/src/cf' | Out-Null
+        try {
+            $repaired = & (Get-Module EdtWorktree) {
+                param($ws, $wt, $ref)
+                Repair-EdtWtWorkspaceLocations -WorkspaceDir $ws -WorktreePath $wt -ReferenceWsDir $ref
+            } $tempWs $tempWt $refWs
+            $repaired | Should -Contain 'cf'
+            $parsed = & (Get-Module EdtWorktree) { param($f) Get-EdtWtLocationUri -LocationFile $f } $locFile
+            $parsed.Value | Should -Match '%5B1%5D'
+            $parsed.Value | Should -Not -Match '[\[\] ]'
+
+            # Повторный запуск: путь верный и URI валиден, перепривязки нет
+            $again = & (Get-Module EdtWorktree) {
+                param($ws, $wt, $ref)
+                Repair-EdtWtWorkspaceLocations -WorkspaceDir $ws -WorktreePath $wt -ReferenceWsDir $ref
+            } $tempWs $tempWt $refWs
+            @($again).Count | Should -Be 0
+        } finally {
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'декодирует URI с экранированными пробелами и кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
         $uri = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
         $expected = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'
