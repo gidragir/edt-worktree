@@ -358,3 +358,63 @@ Describe 'Автодополнение edt' {
         (& $script:Complete 'edt project add -RefBranch main ') | Should -Be @('loose')
     }
 }
+
+Describe 'Автодополнение edt: безопасность и ветки' {
+    BeforeAll {
+        $script:Complete = {
+            param([string]$Line)
+            @([System.Management.Automation.CommandCompletion]::CompleteInput($Line, $Line.Length, $null).CompletionMatches | ForEach-Object CompletionText)
+        }
+        $script:CfgFile = $env:EDT_CONFIG_PATH
+    }
+
+    AfterAll { & $script:Seed }
+
+    It 'повреждённый конфиг: пусто, без исключения, файл не тронут' {
+        [IO.File]::WriteAllText($script:CfgFile, '{ broken')
+        $before = [IO.File]::ReadAllBytes($script:CfgFile)
+        { & $script:Complete 'edt project ' } | Should -Not -Throw
+        # PowerShell сам подставляет имена файлов, когда подсказок нет: наших кандидатов быть не должно.
+        (& $script:Complete 'edt project ') | Should -Not -Contain 'list'
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        [IO.File]::ReadAllBytes($script:CfgFile) | Should -Be $before
+    }
+
+    It 'конфиг старше v3: пусто, файл не тронут, .v2.bak нет' {
+        [IO.File]::WriteAllText($script:CfgFile, '{"paths":{"projects_root":"X:\r"},"projects":{"ka":{}}}')
+        $before = [IO.File]::ReadAllBytes($script:CfgFile)
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        [IO.File]::ReadAllBytes($script:CfgFile) | Should -Be $before
+        @(Get-ChildItem -LiteralPath (Split-Path $script:CfgFile) -Filter '*.v2.bak').Count | Should -Be 0
+    }
+
+    It 'конфиг отсутствует: пусто, файл не создаётся' {
+        Remove-Item -LiteralPath $script:CfgFile -Force -ErrorAction SilentlyContinue
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        Test-Path -LiteralPath $script:CfgFile | Should -BeFalse
+    }
+
+    It 'конфиг v3 работает как раньше' {
+        & $script:Seed
+        (& $script:Complete 'edt open ') | Should -Be @('ka')
+    }
+
+    It 'ветки: только имена, переживающие Resolve-EdtWtBranchName' {
+        & $script:Seed
+        foreach ($b in 'feature/T-5', 'develop', 'bugfix/y', 'feature/a/b') {
+            & git -C $script:Repo branch $b 2>$null
+        }
+        $r = & $script:Complete 'edt open ka '
+        $r | Should -Contain 'T-5'
+        $r | Should -Contain 'bugfix/y'
+        $r | Should -Contain 'feature/a/b'
+        $r | Should -Not -Contain 'develop'
+        $r | Should -Not -Contain 'main'
+        $r | Should -Not -Contain 'feature/T-5'
+        foreach ($name in $r) {
+            $full = & $script:m { param($n) Resolve-EdtWtBranchName -Name $n -Prefix 'feature/' } $name
+            (& git -C $script:Repo branch --list $full) | Should -Not -BeNullOrEmpty -Because $name
+        }
+    }
+}
+

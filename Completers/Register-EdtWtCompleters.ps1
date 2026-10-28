@@ -11,7 +11,9 @@ function Register-EdtWtCompleters {
     $completer = {
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-        $cfg = Get-EdtWtConfig
+        try {
+        $cfg = Get-EdtWtConfigForCompletion
+        if ($null -eq $cfg) { return }
         $projects = @(@($cfg.projects.PSObject.Properties).ForEach('Name'))
 
         # Ключи со значением: само значение позиционным не считается.
@@ -69,8 +71,13 @@ function Register-EdtWtCompleters {
                     }
                 }
             } catch { return @() }
+            # Предлагаются только имена, переживающие Resolve-EdtWtBranchName: со слешем - как есть,
+            # под branch_prefix - без префикса; прочие без слеша дали бы feature/<имя>.
             return @($names | Where-Object { $_ -and $_ -ne 'HEAD' -and $_ -ne $refBranch } | ForEach-Object {
-                    if ($prefix -and $_.StartsWith($prefix)) { $_.Substring($prefix.Length) } else { $_ }
+                    if ($prefix -and $_.StartsWith($prefix)) {
+                        $short = $_.Substring($prefix.Length)
+                        if ($short -and -not $short.Contains('/')) { $short } elseif ($_.Contains('/')) { $_ }
+                    } elseif ($_.Contains('/')) { $_ }
                 } | Select-Object -Unique)
         }
 
@@ -150,6 +157,9 @@ function Register-EdtWtCompleters {
             ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
+        } catch {
+            return
+        }
     }
 
     # Подкоманды подсказывает ValidateSet параметра Command; здесь - всё остальное.
@@ -158,9 +168,14 @@ function Register-EdtWtCompleters {
     # Update-EdtWtReference принимает проекты явным параметром.
     Register-ArgumentCompleter -CommandName 'Update-EdtWtReference' -ParameterName 'Project' -ScriptBlock {
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
-        $cfg = Get-EdtWtConfig
-        @($cfg.projects.PSObject.Properties).ForEach('Name') |
-            Where-Object { $_ -like "$wordToComplete*" } |
-            ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        try {
+            $cfg = Get-EdtWtConfigForCompletion
+            if ($null -eq $cfg) { return }
+            @($cfg.projects.PSObject.Properties).ForEach('Name') |
+                Where-Object { $_.StartsWith($wordToComplete, [System.StringComparison]::OrdinalIgnoreCase) } |
+                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        } catch {
+            return
+        }
     }
 }
