@@ -162,7 +162,7 @@ function Get-EdtWorktreeList {
             $wsPath = $wsDir.FullName
             $locked = Test-Path -LiteralPath (Join-Path $wsPath ".metadata\.lock")
 
-            $matching = @($procs | Where-Object { $_.CommandLine -like "*$wsPath*" })
+            $matching = @($procs | Where-Object { (Test-EdtWtProcessOnWorkspace -CommandLine $_.CommandLine -WorkspaceDir $wsPath) })
             $pidList = if ($matching.Count -gt 0) { ($matching | ForEach-Object { "$($_.Name):$($_.ProcessId)" }) -join ', ' } else { '' }
 
             $rows += [PSCustomObject]@{

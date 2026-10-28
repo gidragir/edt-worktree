@@ -258,10 +258,40 @@ function Resolve-EdtWtWrapperArgs {
 # 3. Управление процессами EDT
 # ------------------------------------------------------------------------------
 
+function Get-EdtWtDataArgument {
+    <#
+      Значение ключа -data из командной строки процесса: в кавычках или до пробела.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyString()][AllowNull()][string]$CommandLine)
+
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $null }
+    $m = [regex]::Match($CommandLine, '(?i)(?:^|\s)-data\s+(?:"([^"]*)"|(\S+))')
+    if (-not $m.Success) { return $null }
+    if ($m.Groups[1].Success) { return $m.Groups[1].Value }
+    return $m.Groups[2].Value
+}
+
+function Test-EdtWtProcessOnWorkspace {
+    <# Процесс работает на рабочей области: -data равен пути (нормализованное сравнение). #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [AllowEmptyString()][AllowNull()][string]$CommandLine,
+        [Parameter(Mandatory)][string]$WorkspaceDir
+    )
+
+    $data = Get-EdtWtDataArgument -CommandLine $CommandLine
+    if (-not $data) { return $false }
+    try { return (Test-EdtWtSamePath $data $WorkspaceDir) } catch { return $false }
+}
+
 function Get-EdtWtWorkspaceProcesses {
     <#
       Процессы, занимающие рабочую область: EDT держит .metadata/.lock, поэтому
-      headless-импорт при запущенной IDE невозможен.
+      headless-импорт при запущенной IDE невозможен. Совпадение - по значению -data
+      (равенство нормализованных путей), а не по подстроке.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
@@ -276,7 +306,7 @@ function Get-EdtWtWorkspaceProcesses {
     $filter = ($names | ForEach-Object { "Name = '$_'" }) -join ' OR '
 
     return @(Get-CimInstance -ClassName Win32_Process -Filter $filter -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -like "*$WorkspaceDir*" })
+        Where-Object { $_.CommandLine -and (Test-EdtWtProcessOnWorkspace -CommandLine $_.CommandLine -WorkspaceDir $WorkspaceDir) })
 }
 
 function Stop-EdtWtProcesses {
@@ -462,8 +492,11 @@ function Invoke-EdtWtCli {
     $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
     $proc = [System.Diagnostics.Process]::Start($psi)
+    # stderr читается асинхронно ДО синхронного чтения stdout: иначе переполнение
+    # буфера любого из потоков вешает процесс и вызывающего.
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
     $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
     $proc.WaitForExit()
 
     if ($proc.ExitCode -ne 0) {
