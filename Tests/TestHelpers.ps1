@@ -51,3 +51,45 @@ function Exit-EdtWtTestConfig {
         Remove-Item -LiteralPath $State.Root -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+function New-EdtWtTestRepo {
+    <# Тестовый git-репозиторий с EDT-проектами во временном корне (git вызывается напрямую - только тестовый помощник). #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Branch = 'main',
+        [hashtable]$Projects = @{},
+        [switch]$WithRemote
+    )
+
+    $natures = @{
+        Configuration = 'com._1c.g5.v8.dt.core.V8ConfigurationNature'
+        Extension     = 'com._1c.g5.v8.dt.core.V8ExtensionNature'
+    }
+    $repo = Join-Path $Root $Name
+    New-Item -ItemType Directory -Path $repo -Force | Out-Null
+    $git = { & git -c user.name=test -c user.email=test@example.com -c core.autocrlf=false -C $repo @args 2>&1 | Out-Null }
+
+    & $git init -q -b $Branch
+    foreach ($rel in $Projects.Keys) {
+        $dir = Join-Path $repo $rel
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $projName = Split-Path $rel -Leaf
+        $xml = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>`n<projectDescription>`n`t<name>$projName</name>`n`t<natures>`n`t`t<nature>$($natures[$Projects[$rel]])</nature>`n`t</natures>`n</projectDescription>`n"
+        [System.IO.File]::WriteAllText((Join-Path $dir '.project'), $xml, [System.Text.UTF8Encoding]::new($false))
+    }
+    [System.IO.File]::WriteAllText((Join-Path $repo 'README.md'), "test`n", [System.Text.UTF8Encoding]::new($false))
+    & $git add -A
+    & $git commit -q -m 'init'
+
+    $remote = $null
+    if ($WithRemote) {
+        $remote = Join-Path $Root "$Name.git"
+        & git init -q --bare -b $Branch $remote 2>&1 | Out-Null
+        & $git remote add origin $remote
+        & $git push -q -u origin $Branch
+    }
+    return [pscustomobject]@{ RepoPath = $repo; RemotePath = $remote }
+}

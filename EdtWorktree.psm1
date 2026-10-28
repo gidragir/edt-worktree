@@ -16,6 +16,7 @@ $loadOrder = @(
     (Join-Path $PSScriptRoot 'Private\GitWorktree.ps1')
     (Join-Path $PSScriptRoot 'Private\Configuration.ps1')
     (Join-Path $PSScriptRoot 'Private\ConfigMigration.ps1')
+    (Join-Path $PSScriptRoot 'Private\ProjectDiscovery.ps1')
     (Join-Path $PSScriptRoot 'Private\EclipseLocation.ps1')
     (Join-Path $PSScriptRoot 'Private\EdtProcess.ps1')
     (Join-Path $PSScriptRoot 'Private\Workspace.ps1')
