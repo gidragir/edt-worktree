@@ -13,8 +13,8 @@ BeforeAll {
     $script:Ctx = [PSCustomObject]@{
         ProjectId        = 'test-proj'
         WorktreePath     = 'D:\projects\worktree\test-proj\feature-X'
-        ReferenceBranch  = 'pre-prod'
-        ActiveExtensions = @('cfe', 'cfe_mp', 'cfe_pos')
+        RefBranch        = 'pre-prod'
+        Extensions       = @('src/cfe', 'src/cfe_mp', 'src/cfe_pos')
     }
 
     $script:Resolve = {
@@ -50,7 +50,7 @@ Describe 'Resolve-EdtWtExtensionList' {
         (& $script:Resolve @('cfe', 'cfe_pos')) | Should -Be @('cfe', 'cfe_pos')
     }
 
-    It 'предупреждает об имени, которого нет в active_extensions' {
+    It 'предупреждает об имени, которого нет в расширениях проекта' {
         $warnings = @(& $script:Resolve @('chagned') 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
         $warnings.Count | Should -BeGreaterThan 0
     }
@@ -65,8 +65,8 @@ Describe 'Get-EdtWtChangedExtensions' {
         $script:GitCtx = [PSCustomObject]@{
             ProjectId        = 'test-proj'
             WorktreePath     = $script:TempWt
-            ReferenceBranch  = 'pre-prod'
-            ActiveExtensions = @('cfe', 'cfe_mp', 'cfe_pos')
+            RefBranch        = 'pre-prod'
+            Extensions       = @('src/cfe', 'src/cfe_mp', 'src/cfe_pos')
         }
     }
 
@@ -89,7 +89,7 @@ Describe 'Get-EdtWtChangedExtensions' {
 
         $r | Should -Contain 'cfe_mp'
         $r | Should -Contain 'cfe'
-        $r | Should -Not -Contain 'cfe_legacy'   # нет в active_extensions
+        $r | Should -Not -Contain 'cfe_legacy'   # нет в расширениях проекта
         $r | Should -Not -Contain 'cf'           # конфигурация, не расширение
     }
 }

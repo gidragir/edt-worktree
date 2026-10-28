@@ -131,13 +131,5 @@ Describe 'Конфигурация EdtWorktree v3' {
                 }
             } | Should -Not -Throw
         }
-
-        It 'Get-EdtWtProjectIdFromRepo не падает при пустом Projects' {
-            $empty = [PSCustomObject]@{}
-            $res = & $m {
-                param($p) Get-EdtWtProjectIdFromRepo -GitCommonDir 'C:\dummy\.git' -Projects $p
-            } $empty
-            $res | Should -BeNullOrEmpty
-        }
     }
 }

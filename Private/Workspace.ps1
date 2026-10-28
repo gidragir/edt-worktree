@@ -67,6 +67,14 @@ function New-EdtWtBatch {
 # 2. Выбор расширений и определение целей импорта
 # ------------------------------------------------------------------------------
 
+function Get-EdtWtExtensionNames {
+    <# Имена (папки) рабочих расширений проекта из Context.Extensions (пути относительно клона). #>
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)]$Context)
+
+    return [string[]]@(@($Context.Extensions) | Where-Object { $_ } | ForEach-Object { Split-Path -Leaf $_ })
+}
+
 function Get-EdtWtChangedExtensions {
     <#
       Расширения, затронутые текущей веткой: незакоммиченные изменения плюс
@@ -79,7 +87,7 @@ function Get-EdtWtChangedExtensions {
         $changed = @()
         $st = Invoke-EdtWtGit status --porcelain 2>$null
         if ($st) { $changed += ($st | ForEach-Object { $_.Substring(3).Trim() }) }
-        $df = Invoke-EdtWtGit diff --name-only "$($Context.ReferenceBranch)...HEAD" 2>$null
+        $df = Invoke-EdtWtGit diff --name-only "$($Context.RefBranch)...HEAD" 2>$null
         if ($df) { $changed += $df }
     } finally {
         Pop-Location
@@ -87,10 +95,13 @@ function Get-EdtWtChangedExtensions {
 
     $result = @()
     foreach ($f in ($changed | Select-Object -Unique)) {
-        if (($f -replace '\\', '/') -match '^src/([^/]+)/') {
-            $folder = $matches[1]
-            if ($Context.ActiveExtensions -contains $folder -and $result -notcontains $folder) {
-                $result += $folder
+        $file = ($f -replace '\\', '/')
+        foreach ($rel in @($Context.Extensions)) {
+            $prefix = ($rel -replace '\\', '/').TrimEnd('/') + '/'
+            if ($file.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $name = Split-Path -Leaf $rel
+                if ($result -notcontains $name) { $result += $name }
+                break
             }
         }
     }
@@ -100,7 +111,7 @@ function Get-EdtWtChangedExtensions {
 function Resolve-EdtWtExtensionList {
     <#
       Единственное место выбора расширений (Strategy). Режимы:
-        (не задан) / 'all' -> все active_extensions проекта
+        (не задан) / 'all' -> все расширения проекта
         'none'             -> пустой список, открывается одна конфигурация
         'changed'          -> только расширения, затронутые веткой относительно
                                эталонной ветки (git status + git diff)
@@ -111,18 +122,18 @@ function Resolve-EdtWtExtensionList {
         [string[]]$Extensions
     )
 
-    if (-not $Extensions -or $Extensions.Count -eq 0) { return @($Context.ActiveExtensions) }
+    if (-not $Extensions -or $Extensions.Count -eq 0) { return @(Get-EdtWtExtensionNames -Context $Context) }
 
     if ($Extensions.Count -eq 1) {
         switch ($Extensions[0].ToLower()) {
-            'all' { return @($Context.ActiveExtensions) }
+            'all' { return @(Get-EdtWtExtensionNames -Context $Context) }
             'none' { return @() }
             'changed' { return @(Get-EdtWtChangedExtensions -Context $Context) }
         }
     }
 
-    if ($Extensions.Count -eq 1 -and $Context.ActiveExtensions -notcontains $Extensions[0]) {
-        Write-Warning "Расширение '$($Extensions[0])' не указано в active_extensions проекта. Режимы: all, none, changed."
+    if ($Extensions.Count -eq 1 -and @(Get-EdtWtExtensionNames -Context $Context) -notcontains $Extensions[0]) {
+        Write-Warning "Расширение '$($Extensions[0])' не входит в расширения проекта. Режимы: all, none, changed."
     }
 
     return @($Extensions)
@@ -149,7 +160,10 @@ function Get-EdtWtImportTargets {
         $candidates += (Join-Path $Context.WorktreePath $Context.CfProject)
     }
     foreach ($ext in $Extensions) {
-        $candidates += (Join-Path $Context.WorktreePath "src\$ext")
+        # Имя расширения -> путь из конфига проекта; иначе имя трактуется как путь от корня worktree.
+        $rel = @($Context.Extensions) | Where-Object { (Split-Path -Leaf $_) -ieq $ext } | Select-Object -First 1
+        if (-not $rel) { $rel = $ext }
+        $candidates += (Join-Path $Context.WorktreePath ($rel -replace '/', '\'))
     }
 
     $targets = @()

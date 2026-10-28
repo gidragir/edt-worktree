@@ -65,34 +65,6 @@ function Get-EdtWtProperty {
     return $value
 }
 
-function Get-EdtWtProjectIdFromRepo {
-    param([Parameter(Mandatory)][string]$GitCommonDir, [Parameter(Mandatory)]$Projects)
-
-    $candidates = @()
-
-    $originUrl = (Invoke-EdtWtGit config --get remote.origin.url 2>$null)
-    if ($originUrl) {
-        $leaf = ($originUrl -replace '\\', '/').TrimEnd('/').Split('/')[-1]
-        $candidates += ($leaf -replace '\.git$', '')
-    }
-
-    # .git общей папки: <repo>/.git или <repo>/.git/worktrees/<id>
-    $common = (Resolve-Path -LiteralPath $GitCommonDir -ErrorAction SilentlyContinue)
-    if ($common) {
-        $commonPath = $common.Path.TrimEnd('\')
-        if ((Split-Path -Leaf $commonPath) -eq '.git') {
-            $candidates += (Split-Path -Leaf (Split-Path -Parent $commonPath))
-        } else {
-            $candidates += (Split-Path -Leaf $commonPath)
-        }
-    }
-
-    foreach ($c in $candidates) {
-        if ($c -and ($null -ne $Projects.PSObject.Properties[$c])) { return $c }
-    }
-    return $null
-}
-
 # ------------------------------------------------------------------------------
 # 2. Конфиг v3: путь, дефолты, чтение и сохранение
 # ------------------------------------------------------------------------------

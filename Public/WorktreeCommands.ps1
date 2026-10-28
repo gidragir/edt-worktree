@@ -14,18 +14,21 @@ function Get-EdtWtContext {
         Собирает контекст текущего worktree: проект, пути, параметры EDT.
 
     .DESCRIPTION
-        Определяет проект по git-репозиторию и реестру projects.json, вычисляет
-        каталоги рабочей области и эталона, путь к 1cedtcli и GUI, аргументы JVM
-        и список активных расширений. Используется всеми операциями модуля.
+        Определяет проект по клону (git rev-parse --git-common-dir): клон и все его
+        worktree относятся к проекту с именем папки клона в repos_root. Вычисляет
+        каталоги рабочей области и эталона (_reference), путь к 1cedtcli и GUI,
+        аргументы JVM, эталонную ветку проекта (RefBranch) и расширения
+        (Extensions - пути относительно клона). Незарегистрированный клон - ошибка.
 
     .PARAMETER Path
-        Каталог внутри worktree. По умолчанию - текущий.
+        Каталог внутри клона или его worktree. По умолчанию - текущий.
 
     .PARAMETER ProjectName
-        Явное имя проекта, если автоопределение по репозиторию не срабатывает.
+        Явное имя проекта: клон берётся из repos_root, если Path не указан
+        и текущий каталог не внутри клона.
 
     .EXAMPLE
-        Get-EdtWtContext | Select-Object ProjectId, WorkspaceDir, ActiveExtensions
+        Get-EdtWtContext | Select-Object ProjectId, WorkspaceDir, Extensions
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
@@ -35,52 +38,44 @@ function Get-EdtWtContext {
     )
 
     $cfg = Get-EdtWtConfig
+    $reposRoot = $cfg.paths.repos_root
 
     $startPath = if ($Path) { $Path } else { (Get-Location).Path }
+    $resolved = Resolve-EdtWtProjectFromPath -Path $startPath -Config $cfg
+    if (-not $resolved -and $ProjectName -and -not $Path) {
+        # Явный проект вне клона: работаем от самого клона.
+        $startPath = Join-Path $reposRoot $ProjectName
+        $resolved = Resolve-EdtWtProjectFromPath -Path $startPath -Config $cfg
+    }
+    if (-not $resolved) {
+        throw "Каталог '$startPath' не относится к клону из repos_root ($reposRoot). Перейдите в клон проекта или его worktree либо укажите -ProjectName."
+    }
+
+    $projectId = if ($ProjectName) { $ProjectName } else { $resolved.Name }
+    $projDef = Get-EdtWtProjectDef -Config $cfg -Name $projectId
+
     Push-Location -LiteralPath $startPath
     try {
         $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
         if (-not $topLevel) { throw "Каталог '$startPath' не находится внутри git-репозитория." }
         $topLevel = ($topLevel -replace '/', '\')
-
-        $gitCommonDir = (Invoke-EdtWtGit rev-parse --git-common-dir 2>$null)
-        if (-not $gitCommonDir) { throw "Не удалось определить git-common-dir для '$startPath'." }
-        if (-not [System.IO.Path]::IsPathRooted($gitCommonDir)) {
-            $gitCommonDir = Join-Path $topLevel $gitCommonDir
-        }
-        $gitCommonDir = ($gitCommonDir -replace '/', '\')
-
         $branch = (Invoke-EdtWtGit rev-parse --abbrev-ref HEAD 2>$null)
-
-        $projectId = $null
-        if ($ProjectName) {
-            $projectId = $ProjectName
-        } else {
-            $projectId = Get-EdtWtProjectIdFromRepo -GitCommonDir $gitCommonDir -Projects $cfg.projects
-        }
     } finally {
         Pop-Location
     }
 
-    if (-not $projectId) {
-        throw "Проект не найден в конфигурации (.edt-worktree.json или реестре проектов). Репозиторий: $topLevel. Укажите -ProjectName явно."
-    }
-    if ($null -eq $cfg.projects.PSObject.Properties[$projectId]) {
-        throw "Проект '$projectId' отсутствует в конфигурации (.edt-worktree.json или реестре проектов)."
-    }
-
-    $projDef = Get-EdtWtProjectDef -Config $cfg -Name $projectId
+    $repoPath = if ($projectId -ne $resolved.Name) { Join-Path $reposRoot $projectId } else { $resolved.RepoPath }
     $edtCfg = $cfg.edt
 
     $worktreeId = if ($branch -and $branch -ne 'HEAD') { ConvertTo-EdtWtSafeName $branch } else { ConvertTo-EdtWtSafeName (Split-Path -Leaf $topLevel) }
 
     $edtCli = Get-EdtWtProperty $edtCfg 'cli_path'
     if (-not $edtCli) {
-        $found = Find-EdtWtCli
-        if ($found -and $found.Count -gt 0) { $edtCli = $found[0].Path }
+        $found = @(Find-EdtWtCli)
+        if ($found.Count -gt 0) { $edtCli = $found[0].Path }
     }
     if (-not $edtCli) {
-        throw "Путь к 1cedtcli не настроен. Запустите 'Initialize-EdtConfig' или укажите edt.cli_path в конфигурации."
+        throw "Путь к 1cedtcli не настроен. Установите 1C:EDT или укажите edt.cli_path в конфигурации (edt config set edt.cli_path <путь>)."
     }
     $edtCli = ($edtCli -replace '/', '\')
     $edtGui = Join-Path (Split-Path -Parent $edtCli) "1cedt.exe"
@@ -89,24 +84,24 @@ function Get-EdtWtContext {
 
     $workspacesRoot = ($cfg.paths.workspaces_root -replace '/', '\')
     $projectRootWs = Join-Path $workspacesRoot $projectId
-    $refBranch = Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod'
 
     return [PSCustomObject]@{
-        ProjectId       = $projectId
-        WorktreeId      = $worktreeId
-        Branch          = $branch
-        WorktreePath    = $topLevel
-        GitCommonDir    = $gitCommonDir
-        ProjectWsRoot   = $projectRootWs
-        WorkspaceDir    = Join-Path $projectRootWs $worktreeId
-        ReferenceWsDir  = Join-Path $projectRootWs "_reference_preprod"
-        ReferenceBranch = $refBranch
-        CfProject       = Get-EdtWtProperty $projDef 'cf_project' 'src/cf'
-        ActiveExtensions= @(@(Get-EdtWtProperty $projDef 'extensions' @()) | ForEach-Object { Split-Path -Leaf $_ })
-        EdtCliPath      = $edtCli
-        EdtGuiPath      = $edtGui
-        JvmArgs         = $jvmArgs
-        TimeoutSec      = Get-EdtWtProperty $edtCfg 'timeout_sec' 7200
+        ProjectId      = $projectId
+        WorktreeId     = $worktreeId
+        Branch         = $branch
+        WorktreePath   = $topLevel
+        RepoPath       = $repoPath
+        GitCommonDir   = Join-Path $repoPath '.git'
+        ProjectWsRoot  = $projectRootWs
+        WorkspaceDir   = Join-Path $projectRootWs $worktreeId
+        ReferenceWsDir = Join-Path $projectRootWs '_reference'
+        RefBranch      = Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod'
+        CfProject      = Get-EdtWtProperty $projDef 'cf_project' 'src/cf'
+        Extensions     = [string[]]@(Get-EdtWtProperty $projDef 'extensions' @())
+        EdtCliPath     = $edtCli
+        EdtGuiPath     = $edtGui
+        JvmArgs        = $jvmArgs
+        TimeoutSec     = Get-EdtWtProperty $edtCfg 'timeout_sec' 7200
     }
 }
 
@@ -220,13 +215,13 @@ function Invoke-EdtWorktreeOpen {
 
     .DESCRIPTION
         Рабочая область при первом открытии клонируется из прогретого эталона
-        _reference_preprod, поэтому индексы не строятся заново. Затем проекты
+        _reference, поэтому индексы не строятся заново. Затем проекты
         перепривязываются на текущий worktree, недостающие импортируются
         headless-вызовом 1cedtcli, переносятся пользовательские настройки IDE
         и запускается сам EDT.
 
     .PARAMETER Extensions
-        Какие расширения подключить: 'all' (по умолчанию - все active_extensions
+        Какие расширения подключить: 'all' (по умолчанию - все расширения
         проекта), 'none' - только конфигурация, 'changed' - затронутые веткой
         относительно эталонной ветки, либо явный список имён.
 
@@ -324,7 +319,7 @@ function Invoke-EdtWorktreeOpen {
 function Invoke-EdtWorktreeWarmup {
     <#
     .SYNOPSIS
-        Прогревает эталонную рабочую область _reference_preprod.
+        Прогревает эталонную рабочую область _reference.
 
     .DESCRIPTION
         Импортирует конфигурацию и расширения из worktree эталонной ветки в
@@ -375,14 +370,14 @@ function Invoke-EdtWorktreeWarmup {
         return
     }
 
-    $refPath = Get-EdtWtWorktreePathForBranch -RepoPath $ctx.WorktreePath -Branch $ctx.ReferenceBranch
+    $refPath = Get-EdtWtWorktreePathForBranch -RepoPath $ctx.WorktreePath -Branch $ctx.RefBranch
     if (-not $refPath) {
-        throw "Не найден рабочий каталог (worktree) для ветки '$($ctx.ReferenceBranch)'. Создайте его: git worktree add <path> $($ctx.ReferenceBranch)"
+        throw "Не найден рабочий каталог (worktree) для ветки '$($ctx.RefBranch)'. Создайте его: git worktree add <path> $($ctx.RefBranch)"
     }
     if (-not (Test-Path -LiteralPath $refPath)) {
-        throw "Worktree ветки '$($ctx.ReferenceBranch)' зарегистрирован, но каталог отсутствует: $refPath"
+        throw "Worktree ветки '$($ctx.RefBranch)' зарегистрирован, но каталог отсутствует: $refPath"
     }
-    Write-Host "    Источник:     $refPath [$($ctx.ReferenceBranch)]" -ForegroundColor Cyan
+    Write-Host "    Источник:     $refPath [$($ctx.RefBranch)]" -ForegroundColor Cyan
 
     if ($Force -and (Test-Path -LiteralPath $ctx.ReferenceWsDir)) {
         if (-not $PSCmdlet.ShouldProcess($ctx.ReferenceWsDir, 'Удалить прогретый эталон и собрать заново')) {
@@ -564,8 +559,8 @@ function Invoke-EdtWorktreeClean {
     $targetId = if ($WorktreeId) { ConvertTo-EdtWtSafeName $WorktreeId } else { $ctx.WorktreeId }
     $wsDir = Join-Path $ctx.ProjectWsRoot $targetId
 
-    if ($targetId -eq '_reference_preprod') {
-        throw "Эталонная рабочая область '_reference_preprod' не удаляется этой командой. Используйте 'edt-wt-warmup -Force' для пересборки."
+    if ($targetId -eq '_reference') {
+        throw "Эталонная рабочая область '_reference' не удаляется этой командой. Используйте 'edt-wt-warmup -Force' для пересборки."
     }
 
     $branchGuess = if ($WorktreeId) { $WorktreeId } else { $ctx.Branch }

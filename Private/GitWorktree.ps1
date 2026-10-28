@@ -35,19 +35,21 @@ function ConvertTo-EdtWtSafeName {
     return $sanitized.Trim('-')
 }
 
-function ConvertTo-EdtWtTaskFolder {
+function Resolve-EdtWtBranchName {
     <#
-      Короткое имя задачи (TASK-123) приводится к имени каталога и рабочей
-      области (feature-TASK-123). Полное имя остаётся как есть.
+      Полное имя ветки: имя со слешем (feature/TASK-1, bugfix/x) остаётся как
+      есть, короткое (TASK-1) дополняется префиксом git.branch_prefix.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][string]$Task)
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Prefix
+    )
 
-    if ($Task.StartsWith('feature-')) { return $Task }
-    return "feature-$Task"
+    if ($Name.Contains('/')) { return $Name }
+    return $Prefix + $Name
 }
-
 # ------------------------------------------------------------------------------
 # 2. Определение путей и переходов по каталогам
 # ------------------------------------------------------------------------------
@@ -78,7 +80,7 @@ function Get-EdtWtWorktreePathForBranch {
 
 function Get-EdtWtWorktreeDir {
     <#
-      Каталог worktree задачи. Префикс feature- подставляется, если его нет.
+      Каталог worktree ветки. Короткое имя дополняется git.branch_prefix.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -88,17 +90,17 @@ function Get-EdtWtWorktreeDir {
         [switch]$CreateIfMissing
     )
 
-    $folder = ConvertTo-EdtWtTaskFolder -Task $Task
-    $path = Join-Path (Join-Path (Get-EdtWtConfig).paths.worktrees_root $Project) $folder
+    $cfg = Get-EdtWtConfig
+    $branch = Resolve-EdtWtBranchName -Name $Task -Prefix (Get-EdtWtProperty $cfg.git 'branch_prefix' '')
+    $path = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) (ConvertTo-EdtWtSafeName $branch)
     if (Test-Path -LiteralPath $path) { return $path }
 
     if ($CreateIfMissing) {
-        return (New-EdtWtWorktree -Project $Project -Task $Task)
+        return (New-EdtWtWorktree -Project $Project -Branch $branch)
     }
 
     throw "Worktree не найден: $path"
 }
-
 function Invoke-EdtWtInLocation {
     <#
       Выполняет действие в указанном каталоге, возвращая прежний. Если каталог
@@ -130,49 +132,57 @@ function Invoke-EdtWtInLocation {
 
 function New-EdtWtWorktree {
     <#
-      Создаёт git worktree задачи: fetch, prune, затем подключение существующей
-      ветки feature/<задача> либо создание новой от эталонной ветки.
+      Создаёт (или находит) git worktree ветки. fetch и prune, затем по порядку:
+      существующий worktree ветки, локальная ветка, ветка на remote (с
+      отслеживанием), новая ветка от <remote>/<ref_branch> проекта.
+      Каталог: <worktrees_root>\<проект>\<имя ветки с / -> ->.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)][string]$Project,
-        [Parameter(Mandatory)][string]$Task,
+        [Parameter(Mandatory)][string]$Branch,
         [string]$Base
     )
 
     $cfg = Get-EdtWtConfig
+    $projDef = Get-EdtWtProjectDef -Config $cfg -Name $Project
     $repo = Join-Path $cfg.paths.repos_root $Project
     if (-not (Test-Path -LiteralPath $repo)) {
         throw "Каталог проекта не найден: $repo"
     }
 
-    $folder = ConvertTo-EdtWtTaskFolder -Task $Task
-    $wtPath = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) $folder
-    $branch = "feature/" + ($Task -replace '^feature[-/]', '')
+    $remote = Get-EdtWtProperty $cfg.git 'remote' 'origin'
+    $wtPath = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) (ConvertTo-EdtWtSafeName $Branch)
 
-    if (-not $Base) {
-        $projDef = Get-EdtWtProjectDef -Config $cfg -Name $Project
-        $Base = "origin/" + (Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod')
-    }
-
-    if (-not $PSCmdlet.ShouldProcess($wtPath, "Создать git worktree ветки $branch")) {
+    if (-not $PSCmdlet.ShouldProcess($wtPath, "Создать git worktree ветки $Branch")) {
         return $wtPath
     }
 
-    Write-Host "==> Создание worktree: $branch" -ForegroundColor Cyan
-    Invoke-EdtWtGit -C $repo fetch origin 2>&1 | Out-Null
+    Write-Host "==> Worktree ветки: $Branch" -ForegroundColor Cyan
+    Invoke-EdtWtGit -C $repo fetch $remote 2>&1 | Out-Null
     Invoke-EdtWtGit -C $repo worktree prune 2>&1 | Out-Null
 
-    Invoke-EdtWtGit -C $repo show-ref --verify --quiet "refs/heads/$branch"
-    $branchExists = ($LASTEXITCODE -eq 0)
+    $existing = Get-EdtWtWorktreePathForBranch -RepoPath $repo -Branch $Branch
+    if ($existing) {
+        Write-Host "    Worktree ветки уже есть: $existing" -ForegroundColor Gray
+        return $existing
+    }
 
-    if ($branchExists) {
-        Write-Host "    Ветка $branch уже есть — подключается." -ForegroundColor Gray
-        $out = Invoke-EdtWtGit -C $repo worktree add $wtPath $branch 2>&1
+    Invoke-EdtWtGit -C $repo show-ref --verify --quiet "refs/heads/$Branch"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "    Локальная ветка $Branch подключается." -ForegroundColor Gray
+        $out = Invoke-EdtWtGit -C $repo worktree add $wtPath $Branch 2>&1
     } else {
-        Write-Host "    Ветка создаётся от $Base." -ForegroundColor Gray
-        $out = Invoke-EdtWtGit -C $repo worktree add -b $branch $wtPath $Base 2>&1
+        Invoke-EdtWtGit -C $repo show-ref --verify --quiet "refs/remotes/$remote/$Branch"
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Ветка $remote/$Branch подключается с отслеживанием." -ForegroundColor Gray
+            $out = Invoke-EdtWtGit -C $repo worktree add --track -b $Branch $wtPath "$remote/$Branch" 2>&1
+        } else {
+            if (-not $Base) { $Base = "$remote/" + (Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod') }
+            Write-Host "    Ветка создаётся от $Base." -ForegroundColor Gray
+            $out = Invoke-EdtWtGit -C $repo worktree add -b $Branch $wtPath $Base 2>&1
+        }
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -182,7 +192,6 @@ function New-EdtWtWorktree {
     Write-Host "    ✓ Worktree создан: $wtPath" -ForegroundColor Green
     return $wtPath
 }
-
 function Update-EdtWtBranch {
     <#
       Подтягивает ветку в рабочем каталоге: fetch и перемотка вперёд.
@@ -321,7 +330,7 @@ function Resolve-EdtWtTarget {
                 $result.ProjectId = $items[0]
                 $result.Path = Get-EdtWtWorktreeDir -Project $items[0] -Task $items[1]
             } elseif ($items.Count -gt 0) {
-                $result.WorktreeId = ConvertTo-EdtWtTaskFolder -Task $items[0]
+                $result.WorktreeId = ConvertTo-EdtWtSafeName (Resolve-EdtWtBranchName -Name $items[0] -Prefix (Get-EdtWtProperty $cfg.git 'branch_prefix' ''))
             }
         }
 

@@ -87,7 +87,7 @@ Describe 'Get-EdtWtImportTargets' {
             WorktreePath     = $script:Wt
             WorkspaceDir     = $script:Ws
             CfProject        = 'src\cf'
-            ActiveExtensions = @('cfe', 'cfe_mp')
+            Extensions       = @('src/cfe', 'src/cfe_mp', 'src/cfe_broken')
         }
 
         $script:Plan = {
