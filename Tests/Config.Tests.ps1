@@ -12,7 +12,7 @@ AfterAll {
 }
 Describe 'Конфигурация EdtWorktree v3' {
     BeforeEach {
-        Remove-Item -LiteralPath $script:CfgPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $script:CfgPath, "$script:CfgPath.v2.bak" -Force -ErrorAction SilentlyContinue
     }
 
     Context 'Чтение' {
@@ -30,7 +30,7 @@ Describe 'Конфигурация EdtWorktree v3' {
         }
 
         It 'файл накладывается поверх дефолтов, неизвестные ключи сохраняются' {
-            '{"paths":{"repos_root":"X:\\repos"},"custom":{"x":1}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
+            '{"version":3,"paths":{"repos_root":"X:\\repos"},"custom":{"x":1}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
             $cfg = & $m { Get-EdtWtConfig }
             $cfg.paths.repos_root | Should -Be 'X:\repos'
             $cfg.paths.worktrees_root | Should -Not -BeNullOrEmpty
@@ -97,7 +97,7 @@ Describe 'Конфигурация EdtWorktree v3' {
         }
 
         It 'Get-EdtWtProjectDef возвращает описание зарегистрированного проекта' {
-            '{"projects":{"p":{"ref_branch":"main"}}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
+            '{"version":3,"projects":{"p":{"ref_branch":"main"}}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
             $def = & $m { Get-EdtWtProjectDef -Config (Get-EdtWtConfig) -Name 'p' }
             $def.ref_branch | Should -Be 'main'
         }
