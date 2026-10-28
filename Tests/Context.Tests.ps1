@@ -170,3 +170,12 @@ Describe 'New-EdtWtWorktree' {
         { & $script:m { New-EdtWtWorktree -Project 'other' -Branch 'feature/q' } } | Should -Throw '*edt project add other*'
     }
 }
+
+Describe 'Get-EdtWtContext: авто-куча' {
+    It 'без edt.max_heap в JvmArgs нет жёсткого -Xmx (кучу подберёт Resolve-EdtWtJvmArgs)' {
+        (Get-EdtWtContext -Path $script:Repo).JvmArgs | Should -Not -Match '-Xmx'
+    }
+    It 'без edt.gui_max_heap GuiMaxHeap пуст' {
+        (Get-EdtWtContext -Path $script:Repo).GuiMaxHeap | Should -BeNullOrEmpty
+    }
+}

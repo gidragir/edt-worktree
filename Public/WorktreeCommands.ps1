@@ -80,7 +80,10 @@ function Get-EdtWtContext {
     $edtCli = ($edtCli -replace '/', '\')
     $edtGui = Join-Path (Split-Path -Parent $edtCli) "1cedt.exe"
 
-    $jvmArgs = "-Xmx$(Get-EdtWtProperty $edtCfg 'max_heap' '8g') -Xms2g $(Get-EdtWtProperty $edtCfg 'extra_vmargs' '')"
+    # Неявный max_heap = авто: без -Xmx кучу подберёт Resolve-EdtWtJvmArgs.
+    $maxHeap = Get-EdtWtProperty $edtCfg 'max_heap'
+    $xmx = if ($maxHeap) { "-Xmx$maxHeap " } else { '' }
+    $jvmArgs = "$xmx-Xms2g $(Get-EdtWtProperty $edtCfg 'extra_vmargs' '')".Trim()
 
     $workspacesRoot = ($cfg.paths.workspaces_root -replace '/', '\')
     $projectRootWs = Join-Path $workspacesRoot $projectId
@@ -101,6 +104,8 @@ function Get-EdtWtContext {
         EdtCliPath     = $edtCli
         EdtGuiPath     = $edtGui
         JvmArgs        = $jvmArgs
+        VmPath         = Get-EdtWtProperty $edtCfg 'vm_path'
+        GuiMaxHeap     = Get-EdtWtProperty $edtCfg 'gui_max_heap'
         TimeoutSec     = Get-EdtWtProperty $edtCfg 'timeout_sec' 7200
     }
 }
@@ -473,8 +478,7 @@ function Invoke-EdtWorktreeAdd {
     }
 
     Write-Host "==> Возврат 1C:EDT..." -ForegroundColor Cyan
-    Start-Process -FilePath $ctx.EdtGuiPath -ArgumentList "-data `"$($ctx.WorkspaceDir)`""
-    Write-Host "✓ 1C:EDT перезапущен на рабочей области $($ctx.WorkspaceDir)" -ForegroundColor Green
+    Start-EdtWtGui -Context $ctx
 }
 
 function Invoke-EdtWorktreeClean {

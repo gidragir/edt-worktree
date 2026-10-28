@@ -13,59 +13,62 @@ function Find-EdtWtCli {
     .SYNOPSIS
         Ищет установленные версии 1C:EDT на машине.
     .DESCRIPTION
-        Сканирует стандартные каталоги установки 1C:EDT и системный PATH в поисках 1cedtcli.bat.
-        Возвращает массив объектов с версией и полным путём.
+        Сканирует стандартные каталоги установки 1C:EDT и системный PATH в поисках 1cedtcli.
+        Возвращает объекты с версией и путём, новейшая версия первой (сортировка по [version]).
+    .PARAMETER SearchRoots
+        Каталоги для поиска (по умолчанию стандартные каталоги установки).
+    .PARAMETER SkipPath
+        Не искать в PATH.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject[]])]
-    param()
+    param(
+        [string[]]$SearchRoots,
+        [switch]$SkipPath
+    )
+
+    if (-not $PSBoundParameters.ContainsKey('SearchRoots')) {
+        $SearchRoots = @(
+            "$env:ProgramFiles\1C",
+            "$env:LOCALAPPDATA\Programs\1C",
+            "${env:ProgramFiles(x86)}\1C"
+        )
+    }
 
     $results = [System.Collections.Generic.List[PSCustomObject]]::new()
     $seenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-    # 1. Поиск в PATH
-    foreach ($name in @('1cedtcli.exe', '1cedtcli.bat')) {
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if ($cmd -and (Test-Path -LiteralPath $cmd.Source)) {
-            $fullPath = $cmd.Source
-            if ($seenPaths.Add($fullPath)) {
-                $folder = Split-Path -Parent $fullPath
-                $version = if ($folder -match '(\d+\.\d+(\.\d+)?)') { $Matches[1] } else { 'PATH' }
-                $results.Add([PSCustomObject]@{
-                    Version = $version
-                    Path    = $fullPath
-                    Folder  = $folder
-                })
-            }
+    $add = {
+        param([string]$fullPath)
+        if (-not $seenPaths.Add($fullPath)) { return }
+        $folder = Split-Path -Parent $fullPath
+        $leaf = Split-Path -Leaf $folder
+        $ver = if ($leaf -match '(\d+(\.\d+)+)') { $Matches[1] } else { $null }
+        $sortKey = [version]'0.0'
+        if ($ver) { try { $sortKey = [version]$ver } catch { $sortKey = [version]'0.0' } }
+        $results.Add([PSCustomObject]@{
+            Version = if ($ver) { $ver } else { $leaf }
+            Path    = $fullPath
+            Folder  = $folder
+            SortKey = $sortKey
+        })
+    }
+
+    if (-not $SkipPath) {
+        foreach ($name in @('1cedtcli.exe', '1cedtcli.bat')) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd -and (Test-Path -LiteralPath $cmd.Source)) { & $add $cmd.Source }
         }
     }
 
-    # 2. Стандартные каталоги установки
-    $searchRoots = @(
-        "$env:ProgramFiles\1C",
-        "$env:LOCALAPPDATA\Programs\1C",
-        "${env:ProgramFiles(x86)}\1C"
-    )
-
-    foreach ($root in $searchRoots) {
+    foreach ($root in $SearchRoots) {
         if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
         $cliFiles = Get-ChildItem -LiteralPath $root -Filter "1cedtcli.*" -Recurse -Depth 5 -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in @('.exe', '.bat') }
-        foreach ($file in $cliFiles) {
-            $fullPath = $file.FullName
-            if ($seenPaths.Add($fullPath)) {
-                $folder = $file.DirectoryName
-                $version = if ($folder -match '(\d+\.\d+(\.\d+)?)') { $Matches[1] } else { Split-Path -Leaf $folder }
-                $results.Add([PSCustomObject]@{
-                    Version = $version
-                    Path    = $fullPath
-                    Folder  = $folder
-                })
-            }
-        }
+        foreach ($file in $cliFiles) { & $add $file.FullName }
     }
 
-    return @($results | Sort-Object Version -Descending)
+    return @($results | Sort-Object SortKey -Descending | Select-Object Version, Path, Folder)
 }
 
 # ------------------------------------------------------------------------------
@@ -101,6 +104,7 @@ function Resolve-EdtWtJvmArgs {
     $minGb = [math]::Max(1, [math]::Min(2, [math]::Floor($targetGb / 4)))
 
     $result = $JvmArgs -replace '-Xmx\d+[gGmM]', "-Xmx${targetGb}g"
+    if ($result -notmatch '-Xmx') { $result = "$result -Xmx${targetGb}g".Trim() }
     $result = $result -replace '-Xms\d+[gGmM]', "-Xms${minGb}g"
 
     return [PSCustomObject]@{
@@ -299,14 +303,99 @@ function Stop-EdtWtProcesses {
 # 4. Запуск EDT CLI, EDT GUI и vrunner
 # ------------------------------------------------------------------------------
 
+function Test-EdtWtJdkHasJavaFx {
+    <#
+      JDK подходит для GUI EDT: версия 17+ (по файлу release) и есть JavaFX.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$JdkHome)
+
+    $fx = (Test-Path -LiteralPath (Join-Path $JdkHome 'jmods\javafx.base.jmod')) -or
+          (Test-Path -LiteralPath (Join-Path $JdkHome 'lib\javafx-swt.jar'))
+    if (-not $fx) { return $false }
+
+    $release = Join-Path $JdkHome 'release'
+    if (-not (Test-Path -LiteralPath $release)) { return $false }
+    $line = Get-Content -LiteralPath $release -ErrorAction SilentlyContinue | Where-Object { $_ -match '^JAVA_VERSION=' } | Select-Object -First 1
+    if ($line -notmatch 'JAVA_VERSION="?(\d+)') { return $false }
+    return ([int]$Matches[1] -ge 17)
+}
+
+function Resolve-EdtWtGuiJvm {
+    <#
+      Выбор JVM для GUI (spec 7.3): edt.vm_path, затем -vm из 1cedt.ini (тогда
+      -vm не передаётся), JAVA_HOME с JavaFX, известные каталоги JDK, иначе none.
+      Path - полный путь к bin\server\jvm.dll либо $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$EdtGuiPath,
+        [string]$VmPath,
+        [string[]]$SearchRoots
+    )
+
+    $toDll = {
+        param([string]$p)
+        $p = $p -replace '/', '\'
+        if ($p -match '\.dll$') { return $p }
+        return (Join-Path $p 'bin\server\jvm.dll')
+    }
+    $result = { param($path, $reason) [pscustomobject]@{ Path = $path; Reason = $reason } }
+
+    if ($VmPath) {
+        $dll = & $toDll $VmPath
+        if (Test-Path -LiteralPath $dll) { return (& $result $dll 'config') }
+    }
+
+    $ini = Join-Path (Split-Path -Parent $EdtGuiPath) '1cedt.ini'
+    if (Test-Path -LiteralPath $ini) {
+        $lines = @(Get-Content -LiteralPath $ini -Encoding UTF8 | ForEach-Object { $_.Trim() })
+        $vmargsAt = [array]::IndexOf($lines, '-vmargs')
+        $head = if ($vmargsAt -gt 0) { $lines[0..($vmargsAt - 1)] } elseif ($vmargsAt -eq 0) { @() } else { $lines }
+        if (@($head) -contains '-vm') { return (& $result $null 'ini') }
+    }
+
+    if ($env:JAVA_HOME) {
+        $javaHome = $env:JAVA_HOME -replace '/', '\'
+        $dll = & $toDll $javaHome
+        if ((Test-Path -LiteralPath $dll) -and (Test-EdtWtJdkHasJavaFx -JdkHome $javaHome)) {
+            return (& $result $dll 'JAVA_HOME')
+        }
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('SearchRoots')) {
+        $SearchRoots = @(
+            "$env:ProgramFiles\Zulu\*",
+            "$env:ProgramFiles\BellSoft\*",
+            "$env:ProgramFiles\Axiom*\*",
+            "$env:ProgramFiles\Java\*"
+        )
+    }
+    foreach ($root in $SearchRoots) {
+        if (-not $root) { continue }
+        $pattern = if ($root -match '[\*\?]') { $root } else { Join-Path $root '*' }
+        $dirs = @(Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+        foreach ($d in $dirs) {
+            $dll = & $toDll $d.FullName
+            if ((Test-Path -LiteralPath $dll) -and (Test-EdtWtJdkHasJavaFx -JdkHome $d.FullName)) {
+                return (& $result $dll 'scan')
+            }
+        }
+    }
+
+    return (& $result $null 'none')
+}
+
 function Start-EdtWtGui {
     <#
-      Запускает IDE на указанной рабочей области, подняв размер кучи.
+      Единая точка запуска IDE на рабочей области. Куча - edt.gui_max_heap
+      (Context.GuiMaxHeap) либо авто; JVM - Resolve-EdtWtGuiJvm.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory)]$Context,
-        [string]$GuiMaxHeap
+        [Parameter(Mandatory)]$Context
     )
 
     if (-not (Test-Path -LiteralPath $Context.EdtGuiPath)) {
@@ -314,12 +403,14 @@ function Start-EdtWtGui {
     }
 
     $guiArgs = @()
-    $jvmDll = if ($env:JAVA_HOME) { Join-Path ($env:JAVA_HOME -replace '/', '\') "bin\server\jvm.dll" } else { "C:\Program Files\Zulu\zulu-17\bin\server\jvm.dll" }
-    if (Test-Path -LiteralPath $jvmDll) {
-        $guiArgs += @("-vm", "`"$jvmDll`"")
+    $jvm = Resolve-EdtWtGuiJvm -EdtGuiPath $Context.EdtGuiPath -VmPath (Get-EdtWtProperty $Context 'VmPath')
+    if ($jvm.Path) {
+        $guiArgs += @("-vm", "`"$($jvm.Path)`"")
+    } elseif ($jvm.Reason -eq 'none') {
+        Write-Warning "JDK 17 с JavaFX не найдена, см. edt doctor. EDT запускается без -vm."
     }
     $guiArgs += @("-data", "`"$($Context.WorkspaceDir)`"")
-    $guiVm = Resolve-EdtWtGuiVmArgs -Context $Context -MaxHeap $GuiMaxHeap
+    $guiVm = Resolve-EdtWtGuiVmArgs -Context $Context -MaxHeap (Get-EdtWtProperty $Context 'GuiMaxHeap')
     if ($guiVm) {
         Write-Host "    JVM GUI: -Xmx$($guiVm.MaxHeapGb)g (в 1cedt.ini задано 4g)" -ForegroundColor Gray
         $guiArgs += "-vmargs"
