@@ -1,4 +1,4 @@
-﻿# AGENTS.md — Правила для AI-ассистентов в репозитории edt-worktree
+# AGENTS.md — Правила для AI-ассистентов в репозитории edt-worktree
 
 Модуль PowerShell `EdtWorktree` управляет рабочими областями (workspace) 1C:EDT для Git-worktree.
 
@@ -21,6 +21,8 @@
 ## 3. Кодировки и статический анализ
 
 - Все `.ps1` и `.psm1` файлы, содержащие кириллицу или не-ASCII символы, сохраняются строго в **UTF-8 с BOM** (правило PSScriptAnalyzer `PSUseBOMForUnicodeEncodedFile`).
+- После любой правки таких файлов проверять, что BOM сохранился. При потере — перезаписать через `[IO.File]::WriteAllText($p, $t, [Text.UTF8Encoding]::new($true))`, запуская из файла-скрипта, а не через `pwsh -Command "..."` (там теряются `$переменные`).
+- **Вызовы Git строго через `Invoke-EdtWtGit`**: Прямой вызов `git` в модуле запрещён. Все взаимодействия с Git обязаны выполняться через внутреннюю функцию `Invoke-EdtWtGit`. Она изолированно устанавливает `[Console]::OutputEncoding = UTF-8`, передаёт флаг `-c core.quotepath=false` и восстанавливает прежнюю кодировку в `finally`. Иначе кириллические пути и ветки декодируются как cp866 (`╨Ш╨╜╤В...`) и ломают поиск каталогов на диске.
 - Перед завершением любых правок всегда выполнять проверку: `pwsh -NoProfile -File Invoke-EdtWtChecks.ps1`.
 
 ## 4. Eclipse Workspace `.location` и привязка проектов
