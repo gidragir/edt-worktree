@@ -1,5 +1,5 @@
 ﻿# ==============================================================================
-# ConfigCommands.ps1 - Публичные команды конфигурации окружения и проектов
+# ConfigCommands.ps1 - Публичные команды конфигурации: setup, config show|path|set
 # ==============================================================================
 
 Set-StrictMode -Version Latest
@@ -7,282 +7,210 @@ Set-StrictMode -Version Latest
 function Get-EdtConfig {
     <#
     .SYNOPSIS
-        Возвращает текущую конфигурацию модуля EdtWorktree.
+        Возвращает сводку текущей конфигурации EdtWorktree.
     .DESCRIPTION
-        Показывает настройки текущей машины (%APPDATA%\EdtWorktree\config.json).
+        Показывает пути, EDT и зарегистрированные проекты. С -Path возвращает только
+        путь к файлу конфигурации.
+    .PARAMETER Path
+        Вернуть только путь к config.json.
     .PARAMETER AsJson
-        Вывести конфигурацию в виде форматированного JSON.
+        Вернуть сводку в виде JSON.
     .EXAMPLE
         Get-EdtConfig
     .EXAMPLE
-        Get-EdtConfig -AsJson
+        Get-EdtConfig -Path
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject], [string])]
     param(
+        [switch]$Path,
         [switch]$AsJson
     )
 
+    $file = Get-EdtWtUserConfigPath
+    if ($Path) { return $file }
+
     $cfg = Get-EdtWtConfig
-    $userPath = Get-EdtWtUserConfigPath
+    $edtCli = $cfg.edt.cli_path
+    if (-not $edtCli) {
+        $found = @(Find-EdtWtCli)
+        $edtCli = if ($found.Count -gt 0) { "авто: $($found[0].Path)" } else { 'авто: не найден' }
+    }
 
     $summary = [PSCustomObject]@{
-        UserConfigFile     = $userPath
-        ProjectsRoot       = $cfg.paths.repos_root
-        WorktreeRoot       = $cfg.paths.worktrees_root
-        WorkspacesRoot     = $cfg.paths.workspaces_root
-        EdtCliPath         = if ($cfg.edt.cli_path) { $cfg.edt.cli_path } else { 'auto' }
-        EdtPrefsSource     = if ($cfg.edt.prefs_source) { $cfg.edt.prefs_source } else { 'none' }
-        MaxHeap            = if ($cfg.edt.max_heap) { $cfg.edt.max_heap } else { 'auto' }
-        GuiMaxHeap         = if ($cfg.edt.gui_max_heap) { $cfg.edt.gui_max_heap } else { 'auto' }
-        KnownProjects      = @($cfg.projects.PSObject.Properties | ForEach-Object { $_.Name })
+        ConfigFile     = $file
+        ReposRoot      = $cfg.paths.repos_root
+        WorktreesRoot  = $cfg.paths.worktrees_root
+        WorkspacesRoot = $cfg.paths.workspaces_root
+        EdtCli         = $edtCli
+        Projects       = @($cfg.projects.PSObject.Properties | ForEach-Object { $_.Name })
     }
 
     if ($AsJson) {
         return (ConvertTo-Json -InputObject $summary -Depth 5)
     }
-
     return $summary
 }
 
 function Set-EdtConfig {
     <#
     .SYNOPSIS
-        Устанавливает параметры конфигурации пользователя.
+        Меняет один параметр конфигурации по ключу.
     .DESCRIPTION
-        Сохраняет указанные параметры в %APPDATA%\EdtWorktree\config.json.
-    .PARAMETER ProjectsRoot
-        Каталог основных репозиториев (например, D:\projects\default).
-    .PARAMETER WorktreeRoot
-        Каталог git-worktrees (например, D:\projects\worktree).
+        Допустимые ключи: paths.repos_root, paths.worktrees_root, paths.workspaces_root,
+        edt.cli_path, edt.vm_path, edt.prefs_source, edt.max_heap, edt.gui_max_heap,
+        edt.extra_vmargs, edt.timeout_sec, git.remote, git.branch_prefix.
+        Значение 'null' или пустое сбрасывает параметр (авто или значение по умолчанию).
+    .PARAMETER Key
+        Ключ вида раздел.имя.
+    .PARAMETER Value
+        Новое значение.
+    .EXAMPLE
+        Set-EdtConfig -Key edt.max_heap -Value 16g
+    .EXAMPLE
+        Set-EdtConfig -Key edt.cli_path -Value null
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Key,
+        [Parameter(Mandatory, Position = 1)][AllowNull()][AllowEmptyString()][string]$Value
+    )
+
+    $kinds = [ordered]@{
+        'paths.repos_root'      = 'string'
+        'paths.worktrees_root'  = 'string'
+        'paths.workspaces_root' = 'string'
+        'edt.cli_path'          = 'path'
+        'edt.vm_path'           = 'path'
+        'edt.prefs_source'      = 'path'
+        'edt.max_heap'          = 'heap'
+        'edt.gui_max_heap'      = 'heap'
+        'edt.extra_vmargs'      = 'string'
+        'edt.timeout_sec'       = 'positiveInt'
+        'git.remote'            = 'string'
+        'git.branch_prefix'     = 'string'
+    }
+    if (-not $kinds.Contains($Key)) {
+        throw "Неизвестный ключ '$Key'. Допустимые ключи: $($kinds.Keys -join ', ')."
+    }
+
+    $newValue = $null
+    if (-not [string]::IsNullOrWhiteSpace($Value) -and $Value.Trim() -ne 'null') {
+        $newValue = $Value
+        switch ($kinds[$Key]) {
+            'heap' {
+                if ($Value -notmatch '^\d+[gGmM]$') {
+                    throw "Недопустимое значение '$Value' для $Key. Ожидается число с суффиксом g или m, например 16g."
+                }
+            }
+            'positiveInt' {
+                [int]$n = 0
+                if ($Value -notmatch '^\d+$' -or -not [int]::TryParse($Value, [ref]$n) -or $n -le 0) {
+                    throw "Недопустимое значение '$Value' для $Key. Ожидается целое число больше нуля."
+                }
+                $newValue = $n
+            }
+            'path' {
+                if (-not (Test-Path -LiteralPath $Value)) {
+                    Write-Warning "Путь для $Key не существует: $Value"
+                }
+            }
+        }
+    }
+
+    $cfg = Get-EdtWtConfig
+    $section, $name = $Key -split '\.', 2
+    $cfg.$section.$name = $newValue
+
+    if ($PSCmdlet.ShouldProcess((Get-EdtWtUserConfigPath), "Установить $Key")) {
+        Save-EdtWtConfig -Config $cfg | Out-Null
+        $shown = if ($null -eq $newValue) { 'null (по умолчанию)' } else { $newValue }
+        Write-Host "✓ $Key = $shown" -ForegroundColor Green
+    }
+}
+
+function Invoke-EdtSetup {
+    <#
+    .SYNOPSIS
+        Первичная настройка: три каталога, поиск EDT, регистрация проектов.
+    .DESCRIPTION
+        Для каждого не переданного пути интерактивно спрашивает значение (по умолчанию
+        текущее), неинтерактивно оставляет текущее. Отсутствующие каталоги создаются
+        (интерактивно после вопроса). Затем показывается найденный EDT и сохраняется
+        конфиг; повторный запуск не трогает зарегистрированные проекты и прочие ключи.
+        Интерактивно и без -NoProjects в конце предлагается зарегистрировать клоны.
+    .PARAMETER ReposRoot
+        Каталог клонов репозиториев.
+    .PARAMETER WorktreesRoot
+        Каталог git-worktree.
     .PARAMETER WorkspacesRoot
-        Каталог рабочих областей EDT (например, D:\workspaces\worktree).
-    .PARAMETER EdtCliPath
-        Полный путь к исполняемому файлу 1cedtcli.exe / 1cedtcli.bat.
-    .PARAMETER MaxHeap
-        Размер кучи JVM для headless операций (например, 12g).
-    .PARAMETER GuiMaxHeap
-        Размер кучи JVM для GUI IDE (например, 8g).
-    .PARAMETER EdtPrefsSource
-        Каталог-донор настроек IDE (шрифты, цвета, горячие клавиши).
+        Каталог рабочих областей EDT.
+    .PARAMETER NoProjects
+        Не предлагать регистрацию проектов.
     .EXAMPLE
-        Set-EdtConfig -WorkspacesRoot "D:\workspaces\worktree" -MaxHeap "16g"
+        Invoke-EdtSetup
+    .EXAMPLE
+        Invoke-EdtSetup -ReposRoot D:\git -WorktreesRoot D:\wt -WorkspacesRoot D:\ws
     #>
     [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([PSCustomObject])]
     param(
-        [string]$ProjectsRoot,
-        [string]$WorktreeRoot,
+        [string]$ReposRoot,
+        [string]$WorktreesRoot,
         [string]$WorkspacesRoot,
-        [string]$EdtCliPath,
-        [string]$MaxHeap,
-        [string]$GuiMaxHeap,
-        [string]$EdtPrefsSource
+        [switch]$NoProjects
     )
 
+    # Сначала чтение: повреждённый конфиг должен остановить setup до любых действий.
     $cfg = Get-EdtWtConfig
+    $interactive = Test-EdtWtInteractive
+    Write-Host "`n=== [EdtWorktree] Настройка окружения ===" -ForegroundColor Cyan
 
-    if ($PSBoundParameters.ContainsKey('ProjectsRoot')) {
-        $cfg.paths.repos_root = $ProjectsRoot
-    }
-    if ($PSBoundParameters.ContainsKey('WorktreeRoot')) {
-        $cfg.paths.worktrees_root = $WorktreeRoot
-    }
-    if ($PSBoundParameters.ContainsKey('WorkspacesRoot')) {
-        $cfg.paths.workspaces_root = $WorkspacesRoot
-    }
-    if ($PSBoundParameters.ContainsKey('EdtCliPath')) {
-        if (-not (Test-Path -LiteralPath $EdtCliPath)) {
-            Write-Warning "Указанный путь к 1cedtcli не существует: $EdtCliPath"
-        }
-        $cfg.edt.cli_path = $EdtCliPath
-    }
-    if ($PSBoundParameters.ContainsKey('MaxHeap')) {
-        if ($MaxHeap -notmatch '^\d+[gmGM]$') {
-            throw "Недопустимый формат MaxHeap: '$MaxHeap'. Ожидается, например, '12g'."
-        }
-        $cfg.edt.max_heap = $MaxHeap.ToLower()
-    }
-    if ($PSBoundParameters.ContainsKey('GuiMaxHeap')) {
-        if ($GuiMaxHeap -notmatch '^\d+[gmGM]$') {
-            throw "Недопустимый формат GuiMaxHeap: '$GuiMaxHeap'. Ожидается, например, '8g'."
-        }
-        $cfg.edt.gui_max_heap = $GuiMaxHeap.ToLower()
-    }
-    if ($PSBoundParameters.ContainsKey('EdtPrefsSource')) {
-        $cfg.edt.prefs_source = $EdtPrefsSource
-    }
-
-    if ($PSCmdlet.ShouldProcess("config.json", "Сохранить параметры конфигурации EdtWorktree")) {
-        $savedPath = Save-EdtWtConfig -Config $cfg
-        Write-Host "✓ Конфигурация успешно сохранена в $savedPath" -ForegroundColor Green
-    }
-    return (Get-EdtConfig)
-}
-
-function Initialize-EdtConfig {
-    <#
-    .SYNOPSIS
-        Интерактивный мастер первичной настройки окружения EdtWorktree.
-    .DESCRIPTION
-        Опрашивает пользователя о расположении рабочих папок, сканирует установленные
-        версии 1C:EDT и сохраняет файл конфигурации в %APPDATA%\EdtWorktree\config.json.
-    .PARAMETER NonInteractive
-        Использовать значения по умолчанию без интерактивного диалога.
-    .EXAMPLE
-        Initialize-EdtConfig
-    #>
-    [CmdletBinding()]
-    param(
-        [switch]$NonInteractive
+    $items = @(
+        @{ Key = 'repos_root'; Value = $ReposRoot; Prompt = 'Каталог клонов репозиториев' }
+        @{ Key = 'worktrees_root'; Value = $WorktreesRoot; Prompt = 'Каталог git-worktree' }
+        @{ Key = 'workspaces_root'; Value = $WorkspacesRoot; Prompt = 'Каталог рабочих областей EDT' }
     )
+    foreach ($item in $items) {
+        if ($item.Value) {
+            $cfg.paths.($item.Key) = $item.Value
+        } elseif ($interactive) {
+            $answer = Read-EdtWtAnswer -Prompt $item.Prompt -Default $cfg.paths.($item.Key)
+            if ($answer) { $cfg.paths.($item.Key) = $answer }
+        }
+    }
 
-    Write-Host "`n=== [EdtWorktree] Первичная настройка окружения ===" -ForegroundColor Cyan
+    foreach ($item in $items) {
+        $dir = $cfg.paths.($item.Key)
+        if (-not $dir -or (Test-Path -LiteralPath $dir)) { continue }
+        $create = $true
+        if ($interactive) {
+            $reply = Read-EdtWtAnswer -Prompt "Каталог '$dir' не существует. Создать? (Y/n)" -Default 'Y'
+            $create = (-not $reply) -or ($reply -match '^[yYдД]')
+        }
+        if ($create -and $PSCmdlet.ShouldProcess($dir, 'Создать каталог')) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            Write-Host "  Создан: $dir" -ForegroundColor Gray
+        }
+    }
 
-    $cfg = Get-EdtWtConfig
+    $found = @(Find-EdtWtCli)
+    if ($cfg.edt.cli_path) {
+        Write-Host "EDT: $($cfg.edt.cli_path) (задан в конфиге)" -ForegroundColor Gray
+    } elseif ($found.Count -gt 0) {
+        Write-Host "EDT найден: $($found[0].Version) ($($found[0].Path))" -ForegroundColor Gray
+    } else {
+        Write-Host 'EDT не найден - укажите: edt config set edt.cli_path <путь>' -ForegroundColor Yellow
+    }
 
-    if ($NonInteractive) {
+    if ($PSCmdlet.ShouldProcess((Get-EdtWtUserConfigPath), 'Сохранить конфигурацию')) {
         $saved = Save-EdtWtConfig -Config $cfg
-        Write-Host "✓ Конфигурация сохранена с параметрами по умолчанию в $saved" -ForegroundColor Green
-        return (Get-EdtConfig)
-    }
-
-    # 1. Каталоги проектов
-    Write-Host "`n1. Настройка каталогов:" -ForegroundColor Yellow
-    $cfg.paths.repos_root = Read-EdtWtAnswer -Prompt 'Каталог исходных репозиториев' -Default $cfg.paths.repos_root
-    $cfg.paths.worktrees_root = Read-EdtWtAnswer -Prompt 'Каталог git-worktrees' -Default $cfg.paths.worktrees_root
-    $cfg.paths.workspaces_root = Read-EdtWtAnswer -Prompt 'Каталог рабочих областей EDT' -Default $cfg.paths.workspaces_root
-
-    # 2. Выбор версии EDT
-    Write-Host "`n2. Поиск установленных версий 1C:EDT..." -ForegroundColor Yellow
-    $installed = @(Find-EdtWtCli)
-
-    $chosenCli = $null
-    if ($installed.Count -gt 0) {
-        Write-Host "Найдено версий: $($installed.Count)" -ForegroundColor Gray
-        for ($i = 0; $i -lt $installed.Count; $i++) {
-            Write-Host ("  [{0}] 1C:EDT {1} ({2})" -f ($i + 1), $installed[$i].Version, $installed[$i].Path)
-        }
-        Write-Host ("  [{0}] Указать свой путь" -f ($installed.Count + 1))
-
-        $choiceStr = Read-EdtWtAnswer -Prompt 'Выберите версию EDT' -Default '1'
-
-        [int]$choiceNum = 0
-        if ([int]::TryParse($choiceStr, [ref]$choiceNum) -and $choiceNum -ge 1 -and $choiceNum -le $installed.Count) {
-            $chosenCli = $installed[$choiceNum - 1].Path
-        }
-    }
-
-    if (-not $chosenCli) {
-        $cliPrompt = if ($cfg.edt.cli_path) { $cfg.edt.cli_path } else { $null }
-        $chosenCli = Read-EdtWtAnswer -Prompt 'Путь к 1cedtcli.exe или 1cedtcli.bat' -Default $cliPrompt
-    }
-
-    if ($chosenCli) {
-        $cfg.edt.cli_path = $chosenCli
-        Write-Host "  Выбран: $chosenCli" -ForegroundColor Green
-    }
-
-    # 3. Дополнительные параметры
-    Write-Host "`n3. Дополнительные параметры:" -ForegroundColor Yellow
-    $currDonor = if ($cfg.edt.prefs_source) { $cfg.edt.prefs_source } else { 'none' }
-    $ans = Read-EdtWtAnswer -Prompt 'Каталог-донор настроек IDE (шрифты, темы)' -Default $currDonor
-    if ($ans -and $ans -ne 'none') {
-        $cfg.edt.prefs_source = $ans
-    }
-
-    # 4. Сохранение
-    $savedPath = Save-EdtWtConfig -Config $cfg
-    Write-Host "`n✓ Настройки успешно сохранены в: $savedPath" -ForegroundColor Green
-
-    foreach ($p in @($cfg.paths.repos_root, $cfg.paths.worktrees_root, $cfg.paths.workspaces_root)) {
-        if ($p -and -not (Test-Path -LiteralPath $p)) {
-            $create = Read-Host "Каталог '$p' не существует. Создать? [Y/n]"
-            if (-not $create -or $create -match '^[yYдД]') {
-                New-Item -ItemType Directory -Path $p -Force | Out-Null
-                Write-Host "  Создан: $p" -ForegroundColor Gray
-            }
+        Write-Host "✓ Настройки сохранены: $saved" -ForegroundColor Green
+        if ($interactive -and -not $NoProjects) {
+            Add-EdtProject
         }
     }
 
     return (Get-EdtConfig)
-}
-function New-EdtProjectConfig {
-    <#
-    .SYNOPSIS
-        Инициализирует файл конфигурации .edt-worktree.json для проекта 1C.
-    .DESCRIPTION
-        Создает .edt-worktree.json в корне текущего Git-репозитория с автоопределением
-        имени проекта и расширений.
-    .PARAMETER Path
-        Каталог репозитория. По умолчанию текущий.
-    .PARAMETER CfProject
-        Имя или относительный путь проекта основной конфигурации.
-    .PARAMETER ReferenceBranch
-        Имя эталонной ветки (по умолчанию pre-prod).
-    .PARAMETER Force
-        Перезаписать существующий .edt-worktree.json.
-    .EXAMPLE
-        New-EdtProjectConfig
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [string]$Path,
-        [string]$CfProject,
-        [string]$ReferenceBranch = 'pre-prod',
-        [switch]$Force
-    )
-
-    $targetDir = if ($Path) { $Path } else { (Get-Location).Path }
-    Push-Location -LiteralPath $targetDir
-    try {
-        $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
-        if (-not $topLevel) {
-            throw "Каталог '$targetDir' не находится внутри git-репозитория."
-        }
-        $topLevel = ($topLevel -replace '/', '\')
-        $cfgFile = Join-Path $topLevel ".edt-worktree.json"
-
-        if ((Test-Path -LiteralPath $cfgFile) -and -not $Force) {
-            throw "Файл уже существует: $cfgFile. Используйте -Force для перезаписи."
-        }
-
-        if (-not $CfProject) {
-            if (Test-Path -LiteralPath (Join-Path $topLevel "src\cf")) {
-                $CfProject = "src/cf"
-            } elseif (Test-Path -LiteralPath (Join-Path $topLevel ".project")) {
-                $xml = [xml](Get-Content -LiteralPath (Join-Path $topLevel ".project") -Raw)
-                $CfProject = $xml.projectDescription.name
-            }
-            if (-not $CfProject) {
-                $CfProject = Split-Path -Leaf $topLevel
-            }
-        }
-
-        $extensions = @()
-        $extDirs = Get-ChildItem -LiteralPath $topLevel -Directory -Depth 2 -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like 'cfe*' -or $_.Name -like 'ext*' }
-        foreach ($ed in $extDirs) {
-            if (Test-Path -LiteralPath (Join-Path $ed.FullName ".project")) {
-                $extensions += $ed.Name
-            }
-        }
-
-        $template = [ordered]@{
-            cf_project        = $CfProject
-            reference_branch  = $ReferenceBranch
-            v8version         = "8.3.24"
-            active_extensions = $extensions
-            ignored_patterns  = @()
-            ibconnection      = ""
-        }
-
-        if ($PSCmdlet.ShouldProcess($cfgFile, "Создать файл конфигурации проекта")) {
-            $json = ConvertTo-Json -InputObject $template -Depth 5
-            Set-Content -LiteralPath $cfgFile -Value $json -Encoding UTF8
-            Write-Host "✓ Создан файл конфигурации проекта: $cfgFile" -ForegroundColor Green
-            return $template
-        }
-    } finally {
-        Pop-Location
-    }
 }

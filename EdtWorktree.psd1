@@ -20,13 +20,12 @@
         'Update-EdtWtReference'
         'Get-EdtConfig'
         'Set-EdtConfig'
-        'Initialize-EdtConfig'
+        'Invoke-EdtSetup'
         'Get-EdtProject'
         'Add-EdtProject'
         'Set-EdtProjectExtension'
         'Set-EdtProject'
         'Remove-EdtProject'
-        'New-EdtProjectConfig'
         'Update-EdtSelf'
 
         # Совместимость со старыми именами

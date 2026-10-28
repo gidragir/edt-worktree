@@ -56,12 +56,13 @@ Describe 'Конфигурация EdtWorktree v3' {
             (& $m { Get-EdtWtConfig }).version | Should -Be 3
         }
 
-        It 'Set-EdtConfig и Initialize-EdtConfig не перезаписывают повреждённый файл' {
+        It 'Set-EdtConfig и Invoke-EdtSetup не перезаписывают повреждённый файл' {
+            Mock -ModuleName EdtWorktree Test-EdtWtInteractive { $false }
             foreach ($body in '{ broken', '[]', '"x"') {
                 [IO.File]::WriteAllText($script:CfgPath, $body)
                 $before = [IO.File]::ReadAllBytes($script:CfgPath)
-                { Set-EdtConfig -MaxHeap 8g -Confirm:$false } | Should -Throw '*Конфиг повреждён*'
-                { Initialize-EdtConfig -NonInteractive } | Should -Throw '*Конфиг повреждён*'
+                { Set-EdtConfig -Key edt.max_heap -Value 8g -Confirm:$false } | Should -Throw '*Конфиг повреждён*'
+                { Invoke-EdtSetup } | Should -Throw '*Конфиг повреждён*'
                 { & $m { Save-EdtWtConfig -Config (Get-EdtWtConfig) } } | Should -Throw '*Конфиг повреждён*'
                 [IO.File]::ReadAllBytes($script:CfgPath) | Should -Be $before
             }

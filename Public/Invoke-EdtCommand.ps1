@@ -92,7 +92,7 @@
         'update' { @('-SkipGit', '-WhatIf', '-Yes') }
         'self-update' { @() }
         'init' { @('-WhatIf', '-Yes') }
-        'config' { @() }
+        'config' { @('-WhatIf', '-Yes') }
     })
 
     $parsed = Resolve-EdtWtWrapperArgs -Items $Arguments -Allowed $allowed
@@ -176,25 +176,22 @@
         }
 
         'init' {
-            $params = @{}
-            if ($common.ContainsKey('WhatIf')) { $params['WhatIf'] = $common['WhatIf'] }
-            if ($positional.Count -gt 0) { $params['CfProject'] = $positional[0] }
-            New-EdtProjectConfig @params
+            # Временная проводка (Task 13 заменит диспетчер): init = регистрация проекта.
+            $params = $common.Clone()
+            if ($positional.Count -gt 0) { $params['Name'] = $positional[0] }
+            Add-EdtProject @params
         }
 
         'config' {
-            $sub = if ($positional.Count -gt 0) { $positional[0].ToLower() } else { 'get' }
+            $sub = if ($positional.Count -gt 0) { $positional[0].ToLower() } else { 'show' }
             switch ($sub) {
-                'init' {
-                    Initialize-EdtConfig
-                }
+                'init' { Invoke-EdtSetup @common }
+                'path' { Get-EdtConfig -Path }
                 'set' {
-                    Write-Host "Для изменения настроек используйте: Set-EdtConfig [-ProjectsRoot ...] [-WorktreeRoot ...] [-WorkspacesRoot ...] [-EdtCliPath ...]" -ForegroundColor Yellow
-                    Write-Host "Либо запустите мастер: edt config init" -ForegroundColor Cyan
+                    if ($positional.Count -lt 3) { throw 'Использование: edt config set <ключ> <значение>' }
+                    Set-EdtConfig -Key $positional[1] -Value $positional[2] @common
                 }
-                default {
-                    Get-EdtConfig
-                }
+                default { Get-EdtConfig }
             }
         }
     }
