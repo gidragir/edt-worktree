@@ -103,8 +103,12 @@ Describe 'Контракт модуля' {
         $rows[0].PSObject.Properties.Name | Should -Contain 'Workspace'
     }
 
-    It 'отклоняет неверный формат размера кучи' {
-        { Invoke-EdtWorktreeOpen -GuiMaxHeap '12' -WhatIf } | Should -Throw
-        { Invoke-EdtWorktreeWarmup -MaxHeap 'много' -WhatIf } | Should -Throw
+    It 'ключей кучи у open, warmup и add больше нет (куча берётся из конфига)' {
+        foreach ($name in 'Invoke-EdtWorktreeOpen', 'Invoke-EdtWorktreeWarmup', 'Invoke-EdtWorktreeAdd') {
+            $keys = (Get-Command $name).Parameters.Keys
+            $keys | Should -Not -Contain 'MaxHeap'
+            $keys | Should -Not -Contain 'GuiMaxHeap'
+        }
+        (Get-Command Invoke-EdtWorktreeOpen).Parameters.Keys | Should -Not -Contain 'Extensions'
     }
 }

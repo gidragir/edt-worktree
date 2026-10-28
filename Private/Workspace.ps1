@@ -75,68 +75,31 @@ function Get-EdtWtExtensionNames {
     return [string[]]@(@($Context.Extensions) | Where-Object { $_ } | ForEach-Object { Split-Path -Leaf $_ })
 }
 
-function Get-EdtWtChangedExtensions {
+function Get-EdtWtUnusedExtensions {
     <#
-      Расширения, затронутые текущей веткой: незакоммиченные изменения плюс
-      diff относительно эталонной ветки.
+      Расширения, найденные в клоне, но не включённые в рабочие (Context.Extensions).
+      Возвращает относительные пути (RelPath). Нужна warmup и doctor.
     #>
-    param($Context)
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)]$Context)
 
-    Push-Location -LiteralPath $Context.WorktreePath
-    try {
-        $changed = @()
-        $st = Invoke-EdtWtGit status --porcelain 2>$null
-        if ($st) { $changed += ($st | ForEach-Object { $_.Substring(3).Trim() }) }
-        $df = Invoke-EdtWtGit diff --name-only "$($Context.RefBranch)...HEAD" 2>$null
-        if ($df) { $changed += $df }
-    } finally {
-        Pop-Location
-    }
-
-    $result = @()
-    foreach ($f in ($changed | Select-Object -Unique)) {
-        $file = ($f -replace '\\', '/')
-        foreach ($rel in @($Context.Extensions)) {
-            $prefix = ($rel -replace '\\', '/').TrimEnd('/') + '/'
-            if ($file.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $name = Split-Path -Leaf $rel
-                if ($result -notcontains $name) { $result += $name }
-                break
-            }
-        }
-    }
-    return $result
+    $working = @(@($Context.Extensions) | Where-Object { $_ } | ForEach-Object { ($_ -replace '\\', '/').Trim('/') })
+    $found = @(Find-EdtWtEdtProjects -RepoPath $Context.RepoPath | Where-Object { $_.Kind -eq 'Extension' })
+    return [string[]]@($found | Where-Object { $working -inotcontains $_.RelPath } | ForEach-Object { $_.RelPath })
 }
 
-function Resolve-EdtWtExtensionList {
+function Assert-EdtWtReferenceFree {
     <#
-      Единственное место выбора расширений (Strategy). Режимы:
-        (не задан) / 'all' -> все расширения проекта
-        'none'             -> пустой список, открывается одна конфигурация
-        'changed'          -> только расширения, затронутые веткой относительно
-                               эталонной ветки (git status + git diff)
-        иначе              -> список как передан
+      Эталон не должен быть занят EDT. Процессы не закрываются: занятый эталон - отказ.
     #>
-    param(
-        $Context,
-        [string[]]$Extensions
-    )
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Context)
 
-    if (-not $Extensions -or $Extensions.Count -eq 0) { return @(Get-EdtWtExtensionNames -Context $Context) }
-
-    if ($Extensions.Count -eq 1) {
-        switch ($Extensions[0].ToLower()) {
-            'all' { return @(Get-EdtWtExtensionNames -Context $Context) }
-            'none' { return @() }
-            'changed' { return @(Get-EdtWtChangedExtensions -Context $Context) }
-        }
+    $busy = @(Get-EdtWtWorkspaceProcesses -WorkspaceDir $Context.ReferenceWsDir)
+    if ($busy.Count -gt 0) {
+        throw "Эталон занят: $(($busy | ForEach-Object { "$($_.Name):$($_.ProcessId)" }) -join ', '). Закройте EDT и повторите."
     }
-
-    if ($Extensions.Count -eq 1 -and @(Get-EdtWtExtensionNames -Context $Context) -notcontains $Extensions[0]) {
-        Write-Warning "Расширение '$($Extensions[0])' не входит в расширения проекта. Режимы: all, none, changed."
-    }
-
-    return @($Extensions)
 }
 
 function Get-EdtWtImportTargets {
@@ -199,26 +162,18 @@ function Get-EdtWtImportTargets {
 
 function Get-EdtWtPrefsSource {
     <#
-      Каталог-донор настроек. Приоритет:
-        1. edt.prefs_source из config.json
-        2. D:\workspaces\full\<проект> — обычная (не worktree) рабочая область проекта
+      Каталог-донор настроек IDE: только edt.prefs_source из config.json
+      (корень рабочей области или сам каталог .settings). Не задан - $null.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]
     param([Parameter(Mandatory)]$Context)
 
-    $settingsLeaf = ".metadata\.plugins\org.eclipse.core.runtime\.settings"
-    $candidates = @()
-
     $prefsSource = Get-EdtWtProperty (Get-EdtWtConfig).edt 'prefs_source'
-    if ($prefsSource) {
-        $candidates += ($prefsSource -replace '/', '\')
-    }
-    $candidates += (Join-Path "D:\workspaces\full" $Context.ProjectId)
+    if (-not $prefsSource) { return $null }
 
-    foreach ($c in $candidates) {
-        if (-not $c) { continue }
-        $direct = if ($c -match '\.settings$') { $c } else { Join-Path $c $settingsLeaf }
-        if (Test-Path -LiteralPath $direct) { return $direct }
-    }
+    $c = ($prefsSource -replace '/', '\')
+    $direct = if ($c -match '\.settings$') { $c } else { Join-Path $c ".metadata\.plugins\org.eclipse.core.runtime\.settings" }
+    if (Test-Path -LiteralPath $direct) { return $direct }
     return $null
 }
 
@@ -302,8 +257,7 @@ function Initialize-EdtWtWorkspace {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory)]$Context,
-        [switch]$Refresh,
-        [string]$MaxHeap
+        [switch]$Refresh
     )
 
     if ($Refresh -and (Test-Path -LiteralPath $Context.WorkspaceDir)) {
@@ -321,11 +275,7 @@ function Initialize-EdtWtWorkspace {
 
     if (-not (Test-Path -LiteralPath $Context.ReferenceWsDir)) {
         Write-Host "    Эталон отсутствует — запуск прогрева..." -ForegroundColor Yellow
-        $warmupParams = @{
-            ProjectName = $Context.ProjectId
-        }
-        if ($MaxHeap) { $warmupParams['MaxHeap'] = $MaxHeap }
-        Invoke-EdtWorktreeWarmup @warmupParams
+        Invoke-EdtWorktreeWarmup -ProjectName $Context.ProjectId
     }
 
     if (-not $PSCmdlet.ShouldProcess($Context.WorkspaceDir, "Склонировать эталон $($Context.ReferenceWsDir)")) {
@@ -353,25 +303,25 @@ function Show-EdtWtUsage {
     Write-Host @'
 edt <подкоманда> [аргументы] [ключи]
 
-  open   [проект задача] [расширения]   Открыть рабочую область и запустить IDE.
+  open   [проект задача]                Открыть рабочую область и запустить IDE.
          Без аргументов берётся текущий каталог worktree.
-         Расширения: all (по умолчанию), none, changed либо список через запятую.
-         Ключи: -Refresh, -NoGui, -GuiMaxHeap 12g, -MaxHeap 12g, -WhatIf, -Yes
+         Подключаются конфигурация и рабочие расширения проекта.
+         Ключи: -Refresh, -NoGui, -WhatIf, -Yes
 
-  warmup [проект] [расширения]          Собрать эталон, из которого клонируются области.
-         Ключи: -Force, -Validate, -MaxHeap 16g, -WhatIf, -Yes
+  warmup [проект]                       Собрать эталон из клона (на ref_branch) с валидацией.
+         Занятый эталон не трогается. Ключи: -WhatIf, -Yes
 
   add    [проект задача] <расширения>   Подключить расширения к существующей области.
-         Ключи: -Force, -NoGui, -MaxHeap 12g, -WhatIf, -Yes
+         Имена: cfe_x или относительный путь. Ключи: -Force, -NoGui, -WhatIf, -Yes
 
   remove [проект] [задача]              Удалить рабочую область и git worktree.
          Ключи: -WhatIf, -Yes
 
   status [проект]                       Что открыто и какими процессами занято.
 
-  update [проекты]                      Подтянуть pre-prod и пересобрать эталоны.
+  update [проекты]                      Подтянуть ref_branch клона и пересобрать эталоны.
          Для запуска по расписанию: занятые и конфликтные проекты пропускаются.
-         Ключи: -Validate, -SkipGit, -MaxHeap 16g, -WhatIf, -Yes
+         Ключи: -SkipGit, -WhatIf, -Yes
 
   init   [cf_project]                   Создать .edt-worktree.json в корне текущего репозитория.
 
@@ -397,9 +347,9 @@ edt <подкоманда> [аргументы] [ключи]
   edt vr cf load src/cf                 инкрементально
   edt vr cf load src/cf -Full           полностью
   edt open                            открыть текущий worktree
-  edt open my-project TASK-123 -GuiMaxHeap 12g
-  edt open changed -NoGui               только затронутые веткой расширения, без IDE
-  edt warmup my-project -Force -Validate
+  edt open my-project TASK-123
+  edt open -NoGui                       без запуска IDE
+  edt warmup my-project
   edt add cfe_esf
   edt remove TASK-123 -WhatIf
   edt status | Where-Object Locked -eq 'LOCK'

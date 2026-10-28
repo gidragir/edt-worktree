@@ -7,29 +7,30 @@ Set-StrictMode -Version Latest
 function Update-EdtWtReference {
     <#
     .SYNOPSIS
-        Подтягивает эталонную ветку и пересобирает эталоны проектов.
+        Подтягивает эталонную ветку клонов и пересобирает эталоны проектов.
 
     .DESCRIPTION
         Предназначена для запуска по расписанию. Для каждого проекта реестра:
 
-          1. находит worktree эталонной ветки (pre-prod);
-          2. делает fetch и перемотку вперёд (merge --ff-only);
-          3. пересобирает эталонную рабочую область.
+          1. проверяет, что эталон не занят EDT (процессы не закрываются);
+          2. в клоне <repos_root>\<проект> делает fetch и перемотку вперёд
+             (merge --ff-only) ветки ref_branch с remote из git.remote;
+          3. собирает эталон (Invoke-EdtWorktreeWarmup).
+
+        Грязный клон, клон на другой ветке, занятый эталон и ошибки сборки не
+        останавливают обход: проект получает статус skipped с причиной.
 
     .PARAMETER Project
-        Какие проекты обновлять. По умолчанию - все из projects.json.
-
-    .PARAMETER Validate
-        Прогревать ещё и проверки: дольше, зато первый запуск IDE быстрее.
+        Какие проекты обновлять. По умолчанию - все из конфигурации.
 
     .PARAMETER SkipGit
-        Не трогать git, только пересобрать эталоны из текущего состояния веток.
+        Не трогать git, только пересобрать эталоны из текущего состояния клонов.
 
     .EXAMPLE
         Update-EdtWtReference -WhatIf
 
     .EXAMPLE
-        Update-EdtWtReference -Validate -Confirm:$false
+        Update-EdtWtReference -Project my-project -Confirm:$false
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     [OutputType([PSCustomObject])]
@@ -37,18 +38,14 @@ function Update-EdtWtReference {
         [Parameter(Position = 0)]
         [string[]]$Project,
 
-        [switch]$Validate,
-
-        [switch]$SkipGit,
-
-        [ValidatePattern('^\d+[gGmM]$')]
-        [string]$MaxHeap
+        [switch]$SkipGit
     )
 
     $cfg = Get-EdtWtConfig
 
     $knownProjects = if ($cfg.projects) { @($cfg.projects.PSObject.Properties | ForEach-Object { $_.Name }) } else { @() }
     $names = if ($Project) { $Project } else { $knownProjects }
+    $remote = Get-EdtWtProperty $cfg.git 'remote' 'origin'
     $started = Get-Date
     $report = @()
 
@@ -75,38 +72,23 @@ function Update-EdtWtReference {
             }
 
             $ctx = Get-EdtWtContext -Path $repo -ProjectName $name
-            $refPath = Get-EdtWtWorktreePathForBranch -RepoPath $repo -Branch $refBranch
-            if (-not $refPath -or -not (Test-Path -LiteralPath $refPath)) {
-                throw "нет рабочего каталога ветки '$refBranch'"
-            }
-
-            $busy = @(Get-EdtWtWorkspaceProcesses -WorkspaceDir $ctx.ReferenceWsDir)
-            if ($busy.Count -gt 0) {
-                throw "эталон занят процессами: $(($busy | ForEach-Object { $_.Name }) -join ', ')"
-            }
+            Assert-EdtWtReferenceFree -Context $ctx
 
             if (-not $SkipGit) {
-                Write-Host "    [$name] обновление ветки $refBranch..." -ForegroundColor Cyan
-                if ($PSCmdlet.ShouldProcess($refPath, "git fetch и перемотка ветки $refBranch")) {
-                    $git = Update-EdtWtBranch -WorktreePath $refPath -Branch $refBranch
+                Write-Host "    [$name] обновление ветки $refBranch в клоне..." -ForegroundColor Cyan
+                if ($PSCmdlet.ShouldProcess($repo, "git fetch и перемотка ветки $refBranch ($remote)")) {
+                    $git = Update-EdtWtBranch -WorktreePath $repo -Branch $refBranch -Remote $remote
                     if (-not $git.Success) { throw $git.Message }
                     Write-Host "    [$name] $($git.Message)" -ForegroundColor Gray
                     $row.Detail = $git.Message
                 }
             }
 
-            $warmupParams = @{
-                ProjectName = $name
-                Force       = $true
-                Validate    = $Validate
-            }
-            if ($MaxHeap) { $warmupParams['MaxHeap'] = $MaxHeap }
+            $warmupParams = @{ ProjectName = $name }
             if ($PSBoundParameters.ContainsKey('WhatIf')) { $warmupParams['WhatIf'] = $PSBoundParameters['WhatIf'] }
             if ($PSBoundParameters.ContainsKey('Confirm')) { $warmupParams['Confirm'] = $PSBoundParameters['Confirm'] }
 
-            Invoke-EdtWtInLocation -Path $repo -Action {
-                Invoke-EdtWtSafeWarmup -Context $ctx -WarmupParams $warmupParams
-            }
+            Invoke-EdtWorktreeWarmup @warmupParams
             $row.Status = 'updated'
         } catch {
             $row.Status = 'skipped'

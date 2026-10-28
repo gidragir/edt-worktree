@@ -201,7 +201,8 @@ function Update-EdtWtBranch {
     [OutputType([PSCustomObject])]
     param(
         [Parameter(Mandatory)][string]$WorktreePath,
-        [Parameter(Mandatory)][string]$Branch
+        [Parameter(Mandatory)][string]$Branch,
+        [Parameter(Mandatory)][string]$Remote
     )
 
     Push-Location -LiteralPath $WorktreePath
@@ -216,18 +217,18 @@ function Update-EdtWtBranch {
             return [PSCustomObject]@{ Success = $false; Message = "в каталоге ветки checkout на '$current', ожидалась '$Branch'" }
         }
 
-        $fetch = (Invoke-EdtWtGit fetch --prune 2>&1)
+        $fetch = (Invoke-EdtWtGit fetch --prune $Remote 2>&1)
         if ($LASTEXITCODE -ne 0) {
             return [PSCustomObject]@{ Success = $false; Message = "git fetch не удался: $fetch" }
         }
 
-        $behind = (Invoke-EdtWtGit rev-list --count "HEAD..origin/$Branch" 2>$null)
+        $behind = (Invoke-EdtWtGit rev-list --count "HEAD..$Remote/$Branch" 2>$null)
         if (-not $behind) { $behind = '0' }
         if ($behind -eq '0') {
             return [PSCustomObject]@{ Success = $true; Message = 'ветка уже актуальна' }
         }
 
-        $merge = (Invoke-EdtWtGit merge --ff-only "origin/$Branch" 2>&1)
+        $merge = (Invoke-EdtWtGit merge --ff-only "$Remote/$Branch" 2>&1)
         if ($LASTEXITCODE -ne 0) {
             return [PSCustomObject]@{ Success = $false; Message = "перемотка невозможна (нужен ручной merge): $merge" }
         }
@@ -241,38 +242,39 @@ function Update-EdtWtBranch {
 function Invoke-EdtWtSafeWarmup {
     <#
       Пересборка эталона без окна, когда его нет: старый каталог отставляется
-      в сторону и удаляется лишь после успеха, а при ошибке возвращается.
+      в сторону (<эталон>.previous) и удаляется лишь после успеха, а при ошибке
+      недособранный эталон убирается, и прежний возвращается на место.
+      Сама сборка передаётся блоком -Build.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$Context,
-        [Parameter(Mandatory)][hashtable]$WarmupParams
+        [Parameter(Mandatory)][scriptblock]$Build
     )
 
     $ref = $Context.ReferenceWsDir
     $backup = "$ref.previous"
-    $dryRun = $WarmupParams.ContainsKey('WhatIf') -and $WarmupParams['WhatIf']
 
-    if ((Test-Path -LiteralPath $backup) -and -not $dryRun) {
+    if (Test-Path -LiteralPath $backup) {
         Remove-Item -LiteralPath $backup -Recurse -Force
     }
 
     $moved = $false
-    if ((Test-Path -LiteralPath $ref) -and -not $dryRun) {
+    if (Test-Path -LiteralPath $ref) {
         Rename-Item -LiteralPath $ref -NewName (Split-Path -Leaf $backup) -Force
         $moved = $true
     }
 
     try {
-        Invoke-EdtWorktreeWarmup @WarmupParams
+        & $Build
 
         if ($moved -and (Test-Path -LiteralPath $ref)) {
             Remove-Item -LiteralPath $backup -Recurse -Force
         }
     } catch {
+        if (Test-Path -LiteralPath $ref) { Remove-Item -LiteralPath $ref -Recurse -Force }
         if ($moved) {
-            if (Test-Path -LiteralPath $ref) { Remove-Item -LiteralPath $ref -Recurse -Force }
             Rename-Item -LiteralPath $backup -NewName (Split-Path -Leaf $ref) -Force
             Write-Host "    Прежний эталон возвращён на место." -ForegroundColor Yellow
         }

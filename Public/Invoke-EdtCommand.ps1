@@ -84,12 +84,12 @@
     # @(...) обязательна: пустой массив из ветки switch иначе схлопывается
     # в $null, и обязательный параметр -Allowed не связывается.
     $allowed = @(switch ($Command) {
-        'open' { @('-Refresh', '-NoGui', '-GuiMaxHeap <12g>', '-MaxHeap <12g>', '-WhatIf', '-Yes') }
-        'warmup' { @('-Force', '-Validate', '-MaxHeap <16g>', '-WhatIf', '-Yes') }
-        'add' { @('-Force', '-NoGui', '-MaxHeap <12g>', '-WhatIf', '-Yes') }
+        'open' { @('-Refresh', '-NoGui', '-WhatIf', '-Yes') }
+        'warmup' { @('-WhatIf', '-Yes') }
+        'add' { @('-Force', '-NoGui', '-WhatIf', '-Yes') }
         'remove' { @('-WhatIf', '-Yes') }
         'status' { @() }
-        'update' { @('-Validate', '-SkipGit', '-MaxHeap <16g>', '-WhatIf', '-Yes') }
+        'update' { @('-SkipGit', '-WhatIf', '-Yes') }
         'self-update' { @() }
         'init' { @('-WhatIf', '-Yes') }
         'config' { @() }
@@ -103,18 +103,15 @@
     if ($PSBoundParameters.ContainsKey('WhatIf') -or $parsed.Flags.WhatIf) { $common['WhatIf'] = $true }
     if ($PSBoundParameters.ContainsKey('Confirm')) { $common['Confirm'] = $PSBoundParameters['Confirm'] }
     elseif ($parsed.Flags.Yes) { $common['Confirm'] = $false }
-    if ($parsed.Values.MaxHeap) { $common['MaxHeap'] = $parsed.Values.MaxHeap }
 
     switch ($Command) {
         'open' {
             $params = $common.Clone()
             $params['NoGui'] = $parsed.Flags.NoGui
             $params['Refresh'] = $parsed.Flags.Refresh
-            if ($parsed.Values.GuiMaxHeap) { $params['GuiMaxHeap'] = $parsed.Values.GuiMaxHeap }
 
-            # Форма записи: [проект задача] [расширения]
+            # Форма записи: [проект задача]
             $target = Resolve-EdtWtTarget -Positional $positional -Command 'open'
-            if ($target.Extensions.Count -gt 0) { $params['Extensions'] = $target.Extensions }
 
             Invoke-EdtWtInLocation -Path $target.Path -Action {
                 Invoke-EdtWorktreeOpen @params
@@ -123,12 +120,9 @@
 
         'warmup' {
             $params = $common.Clone()
-            $params['Force'] = $parsed.Flags.Force
-            $params['Validate'] = $parsed.Flags.Validate
 
             $target = Resolve-EdtWtTarget -Positional $positional -Command 'warmup'
             if ($target.ProjectId) { $params['ProjectName'] = $target.ProjectId }
-            if ($target.Extensions.Count -gt 0) { $params['Extensions'] = $target.Extensions }
 
             Invoke-EdtWtInLocation -Path $target.Path -Action {
                 Invoke-EdtWorktreeWarmup @params
@@ -171,7 +165,6 @@
 
         'update' {
             $params = $common.Clone()
-            $params['Validate'] = $parsed.Flags.Validate
             $params['SkipGit'] = $parsed.Flags.SkipGit
             if ($positional.Count -gt 0) { $params['Project'] = $positional }
 
