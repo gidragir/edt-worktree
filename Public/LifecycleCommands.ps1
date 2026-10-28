@@ -147,8 +147,10 @@ function Get-EdtWtInstallInfo {
     $link = Join-Path $modulesDir 'EdtWorktree'
 
     $installDir = $null
+    $viaLink = $false
     $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
     if ($item) {
+        $viaLink = $true
         if ($item.LinkType -and $item.Target) { $installDir = @($item.Target)[0] } else { $installDir = $link }
     } else {
         $installDir = $script:EdtWtModuleRoot
@@ -157,6 +159,7 @@ function Get-EdtWtInstallInfo {
     return [PSCustomObject]@{
         ModuleLink = $link
         InstallDir = $installDir
+        ViaLink    = $viaLink
         BinDir     = Join-Path $installDir 'bin'
         ConfigDir  = Split-Path -Parent (Get-EdtWtUserConfigPath)
     }
@@ -181,6 +184,21 @@ function Remove-EdtWtModuleLink {
         # Копия модуля: обычный каталог.
         Remove-Item -LiteralPath $Path -Recurse -Force
     }
+}
+
+function Test-EdtWtDirtyWorkTree {
+    <#
+      $true, если Path - рабочее дерево git с незафиксированными изменениями (только чтение).
+      Не git-каталог или git недоступен - $false.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) { return $false }
+    if (-not (Get-Command -Name git -CommandType Application -ErrorAction SilentlyContinue)) { return $false }
+    $out = Invoke-EdtWtGit -C $Path status --porcelain 2>$null
+    return [bool]$out
 }
 
 function Uninstall-EdtWorktree {
@@ -217,7 +235,19 @@ function Uninstall-EdtWorktree {
 
     if (-not $PSCmdlet.ShouldProcess($info.ModuleLink, 'Удалить установку EdtWorktree')) { return }
 
-    if (Test-Path -LiteralPath $info.ModuleLink) {
+    # Решение о каталоге установки принимается до удаления ссылки (для копии каталог и есть ссылка).
+    $purgeInstall = $false
+    if ($Purge) {
+        if (-not $info.ViaLink) {
+            Write-Warning "Каталог установки не удалён: ссылки модуля нет, а текущий каталог модуля ($($info.InstallDir)) может быть рабочим клоном. Удалите его вручную."
+        } elseif (Test-EdtWtDirtyWorkTree -Path $info.InstallDir) {
+            Write-Warning "Каталог установки не удалён: в нём есть незафиксированные изменения git ($($info.InstallDir)). Закоммитьте или уберите их (stash) либо удалите каталог вручную."
+        } else {
+            $purgeInstall = $true
+        }
+    }
+
+    if (Get-Item -LiteralPath $info.ModuleLink -Force -ErrorAction SilentlyContinue) {
         Remove-EdtWtModuleLink -Path $info.ModuleLink
     }
 
@@ -231,12 +261,20 @@ function Uninstall-EdtWorktree {
     $env:Path = Remove-EdtWtPathEntry -PathValue $env:Path -Entry $info.BinDir
 
     if ($Purge) {
-        if ($info.InstallDir -and (Test-Path -LiteralPath $info.InstallDir)) {
+        if ($purgeInstall -and (Get-Item -LiteralPath $info.InstallDir -Force -ErrorAction SilentlyContinue)) {
             Remove-EdtWtModuleLink -Path $info.InstallDir
         }
+        # Только файлы конфигурации; каталог удаляется, лишь если после этого пуст.
+        $cfgFile = Get-EdtWtUserConfigPath
         $cfgDir = $info.ConfigDir
-        if ($cfgDir -and (Split-Path -Parent $cfgDir) -and (Test-Path -LiteralPath $cfgDir)) {
-            Remove-Item -LiteralPath $cfgDir -Recurse -Force
+        if ($cfgDir -and (Test-Path -LiteralPath $cfgDir -PathType Container)) {
+            $leaf = Split-Path -Leaf $cfgFile
+            $owned = Get-ChildItem -LiteralPath $cfgDir -Force -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq $leaf -or $_.Name -like "$leaf.v2.bak*" -or $_.Name -eq "$leaf.tmp" }
+            foreach ($f in $owned) { Remove-Item -LiteralPath $f.FullName -Force }
+            if (-not (Get-ChildItem -LiteralPath $cfgDir -Force -ErrorAction SilentlyContinue) -and (Split-Path -Parent $cfgDir)) {
+                Remove-Item -LiteralPath $cfgDir -Force
+            }
         }
     }
 

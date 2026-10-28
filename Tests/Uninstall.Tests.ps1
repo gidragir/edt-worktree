@@ -116,6 +116,72 @@ Describe 'Uninstall-EdtWorktree' {
     }
 }
 
+Describe 'Uninstall-EdtWorktree -Purge: защитные проверки' {
+    BeforeEach {
+        $script:link = Join-Path $script:ModulesDir 'EdtWorktree'
+        if (Test-Path -LiteralPath $script:link) { ([System.IO.DirectoryInfo]$script:link).Delete() }
+        $script:prevRoot = & $m { $script:EdtWtModuleRoot }
+    }
+    AfterEach {
+        & $m { param($r) $script:EdtWtModuleRoot = $r } $script:prevRoot
+        if (Test-Path -LiteralPath $script:link) { ([System.IO.DirectoryInfo]$script:link).Delete() }
+    }
+
+    It 'без ссылки не удаляет текущий каталог модуля и предупреждает' {
+        $repo = (New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'devclone').RepoPath
+        & $m { param($r) $script:EdtWtModuleRoot = $r } $repo
+        Uninstall-EdtWorktree -Purge -Confirm:$false -WarningVariable w -WarningAction SilentlyContinue 6>$null
+        Test-Path -LiteralPath (Join-Path $repo 'README.md') | Should -BeTrue
+        ($w -join ' ') | Should -Match 'вручную'
+    }
+
+    It 'грязная цель junction не удаляется, ссылка удаляется' {
+        $repo = (New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'dirty').RepoPath
+        Set-Content -LiteralPath (Join-Path $repo 'work.txt') -Value 'uncommitted'
+        New-Item -ItemType Junction -Path $script:link -Target $repo | Out-Null
+        Uninstall-EdtWorktree -Purge -Confirm:$false -WarningVariable w -WarningAction SilentlyContinue 6>$null
+        Test-Path -LiteralPath $script:link | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $repo 'work.txt') | Should -Be 'uncommitted'
+        ($w -join ' ') | Should -Match 'незафиксированные'
+    }
+
+    It 'чистая цель junction (git-клон) удаляется' {
+        $repo = (New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'clean').RepoPath
+        New-Item -ItemType Junction -Path $script:link -Target $repo | Out-Null
+        Uninstall-EdtWorktree -Purge -Confirm:$false 6>$null
+        Test-Path -LiteralPath $repo | Should -BeFalse
+    }
+
+    It '-Purge удаляет только файл конфига и его копии; чужие файлы и каталог остаются' {
+        $shared = Join-Path $script:TestCfg.Root 'shared'
+        New-Item -ItemType Directory -Path $shared | Out-Null
+        $prev = $env:EDT_CONFIG_PATH
+        try {
+            $env:EDT_CONFIG_PATH = Join-Path $shared 'config.json'
+            foreach ($n in 'config.json', 'config.json.v2.bak', 'config.json.v2.bak.1', 'config.json.tmp', 'other.txt') {
+                Set-Content -LiteralPath (Join-Path $shared $n) -Value 'x'
+            }
+            New-FakeInstall | Out-Null
+            Uninstall-EdtWorktree -Purge -Confirm:$false 6>$null
+            Test-Path -LiteralPath (Join-Path $shared 'other.txt') | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $shared -Force).Name | Should -Be @('other.txt')
+        } finally { $env:EDT_CONFIG_PATH = $prev }
+    }
+
+    It 'каталог конфига удаляется, если после очистки пуст' {
+        $solo = Join-Path $script:TestCfg.Root 'solo'
+        New-Item -ItemType Directory -Path $solo | Out-Null
+        $prev = $env:EDT_CONFIG_PATH
+        try {
+            $env:EDT_CONFIG_PATH = Join-Path $solo 'config.json'
+            Set-Content -LiteralPath $env:EDT_CONFIG_PATH -Value '{}'
+            New-FakeInstall | Out-Null
+            Uninstall-EdtWorktree -Purge -Confirm:$false 6>$null
+            Test-Path -LiteralPath $solo | Should -BeFalse
+        } finally { $env:EDT_CONFIG_PATH = $prev }
+    }
+}
+
 Describe 'Update-EdtSelf без git' {
     It 'бросает понятную ошибку, если git не найден' {
         Mock -ModuleName EdtWorktree -CommandName Get-Command -ParameterFilter { $Name -eq 'git' } -MockWith { $null }
