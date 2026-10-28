@@ -34,8 +34,7 @@ function Get-EdtWtContext {
         [string]$ProjectName
     )
 
-    $settings = Get-EdtWtSettings
-    $cfg = $settings.Config
+    $cfg = Get-EdtWtConfig
 
     $startPath = if ($Path) { $Path } else { (Get-Location).Path }
     Push-Location -LiteralPath $startPath
@@ -56,8 +55,6 @@ function Get-EdtWtContext {
         $projectId = $null
         if ($ProjectName) {
             $projectId = $ProjectName
-        } elseif (($null -ne $cfg.PSObject.Properties['ActiveProjectId']) -and $cfg.ActiveProjectId) {
-            $projectId = $cfg.ActiveProjectId
         } else {
             $projectId = Get-EdtWtProjectIdFromRepo -GitCommonDir $gitCommonDir -Projects $cfg.projects
         }
@@ -72,26 +69,27 @@ function Get-EdtWtContext {
         throw "Проект '$projectId' отсутствует в конфигурации (.edt-worktree.json или реестре проектов)."
     }
 
-    $projDef = $cfg.projects.$projectId
-    $defaults = $cfg.defaults
+    $projDef = Get-EdtWtProjectDef -Config $cfg -Name $projectId
+    $edtCfg = $cfg.edt
 
     $worktreeId = if ($branch -and $branch -ne 'HEAD') { ConvertTo-EdtWtSafeName $branch } else { ConvertTo-EdtWtSafeName (Split-Path -Leaf $topLevel) }
 
-    $edtCli = Get-EdtWtProperty $projDef '1cedtcli' (Get-EdtWtProperty $defaults '1cedtcli')
+    $edtCli = Get-EdtWtProperty $edtCfg 'cli_path'
     if (-not $edtCli) {
         $found = Find-EdtWtCli
         if ($found -and $found.Count -gt 0) { $edtCli = $found[0].Path }
     }
     if (-not $edtCli) {
-        throw "Путь к 1cedtcli не настроен. Запустите 'Initialize-EdtConfig' или укажите 1cedtcli в конфигурации."
+        throw "Путь к 1cedtcli не настроен. Запустите 'Initialize-EdtConfig' или укажите edt.cli_path в конфигурации."
     }
     $edtCli = ($edtCli -replace '/', '\')
     $edtGui = Join-Path (Split-Path -Parent $edtCli) "1cedt.exe"
 
-    $jvm = Get-EdtWtProperty $defaults 'jvm'
-    $jvmArgs = "-Xmx$(Get-EdtWtProperty $jvm 'max_heap' '8g') -Xms$(Get-EdtWtProperty $jvm 'min_heap' '2g') $(Get-EdtWtProperty $jvm 'extra_args' '')"
+    $jvmArgs = "-Xmx$(Get-EdtWtProperty $edtCfg 'max_heap' '8g') -Xms2g $(Get-EdtWtProperty $edtCfg 'extra_vmargs' '')"
 
-    $projectRootWs = Join-Path $settings.RootDir $projectId
+    $workspacesRoot = ($cfg.paths.workspaces_root -replace '/', '\')
+    $projectRootWs = Join-Path $workspacesRoot $projectId
+    $refBranch = Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod'
 
     return [PSCustomObject]@{
         ProjectId       = $projectId
@@ -102,13 +100,13 @@ function Get-EdtWtContext {
         ProjectWsRoot   = $projectRootWs
         WorkspaceDir    = Join-Path $projectRootWs $worktreeId
         ReferenceWsDir  = Join-Path $projectRootWs "_reference_preprod"
-        ReferenceBranch = $settings.ReferenceBranch
+        ReferenceBranch = $refBranch
         CfProject       = Get-EdtWtProperty $projDef 'cf_project' 'src/cf'
-        ActiveExtensions= @(Get-EdtWtProperty $projDef 'active_extensions' @())
+        ActiveExtensions= @(@(Get-EdtWtProperty $projDef 'extensions' @()) | ForEach-Object { Split-Path -Leaf $_ })
         EdtCliPath      = $edtCli
         EdtGuiPath      = $edtGui
         JvmArgs         = $jvmArgs
-        TimeoutSec      = Get-EdtWtProperty (Get-EdtWtProperty $defaults 'timeouts') 'export_batch_sec' 7200
+        TimeoutSec      = Get-EdtWtProperty $edtCfg 'timeout_sec' 7200
     }
 }
 
@@ -135,9 +133,8 @@ function Get-EdtWorktreeList {
     [OutputType([PSCustomObject])]
     param([string]$ProjectName)
 
-    $settings = Get-EdtWtSettings
-    $cfg = $settings.Config
-    $root = $settings.RootDir
+    $cfg = Get-EdtWtConfig
+    $root = ($cfg.paths.workspaces_root -replace '/', '\')
 
     if (-not (Test-Path -LiteralPath $root)) {
         Write-Host "Корень рабочих областей не найден: $root" -ForegroundColor Yellow

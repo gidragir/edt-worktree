@@ -1,4 +1,18 @@
 ﻿BeforeAll {
+    . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+    $script:HygieneRoot = New-EdtWtTestRoot
+    Use-EdtWtTestConfig -Root $script:HygieneRoot | Out-Null
+}
+
+AfterAll {
+    Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
+    Remove-Item env:EDT_LEGACY_CONFIG_PATH -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $script:HygieneRoot) {
+        Remove-Item -LiteralPath $script:HygieneRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+BeforeAll {
     Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
     $script:Public = @(
         'Invoke-EdtCommand'
@@ -49,7 +63,7 @@ Describe 'Контракт модуля' {
     It 'не выносит приватные помощники наружу' {
         # Раньше вся логика лежала в профиле оболочки, и helper-функции
         # засоряли пространство имён и автодополнение.
-        Get-Command -Module EdtWorktree -Name 'Get-EdtWtSettings' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        Get-Command -Module EdtWorktree -Name 'Get-EdtWtConfig' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
         Get-Command -Module EdtWorktree -Name 'Split-EdtWtArguments' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
     }
 
@@ -73,7 +87,7 @@ Describe 'Контракт модуля' {
     It 'Get-EdtWorktreeList возвращает данные, а не результат форматирования' {
         # Регрессия: Format-Table внутри функции делал результат непригодным
         # для фильтрации и использования в скриптах.
-        $root = & (Get-Module EdtWorktree) { (Get-EdtWtSettings).RootDir }
+        $root = & (Get-Module EdtWorktree) { (Get-EdtWtConfig).paths.workspaces_root }
         if (-not (Test-Path -LiteralPath $root)) {
             Set-ItResult -Skipped -Because "корень рабочих областей $root недоступен"
             return

@@ -186,7 +186,7 @@ function Get-EdtWtImportTargets {
 function Get-EdtWtPrefsSource {
     <#
       Каталог-донор настроек. Приоритет:
-        1. defaults.edt_prefs_source из projects.json
+        1. edt.prefs_source из config.json
         2. D:\workspaces\full\<проект> — обычная (не worktree) рабочая область проекта
     #>
     param([Parameter(Mandatory)]$Context)
@@ -194,8 +194,7 @@ function Get-EdtWtPrefsSource {
     $settingsLeaf = ".metadata\.plugins\org.eclipse.core.runtime\.settings"
     $candidates = @()
 
-    $cfg = (Get-EdtWtSettings).Config
-    $prefsSource = Get-EdtWtProperty (Get-EdtWtProperty $cfg 'defaults') 'edt_prefs_source'
+    $prefsSource = Get-EdtWtProperty (Get-EdtWtConfig).edt 'prefs_source'
     if ($prefsSource) {
         $candidates += ($prefsSource -replace '/', '\')
     }
@@ -228,7 +227,7 @@ function Copy-EdtWtPreferences {
     }
 
     if (-not $src -or -not (Test-Path -LiteralPath $src)) {
-        Write-Host "    [skip] Донор настроек IDE не найден (defaults.edt_prefs_source в projects.json)." -ForegroundColor DarkGray
+        Write-Host "    [skip] Донор настроек IDE не найден (edt.prefs_source в config.json)." -ForegroundColor DarkGray
         return @()
     }
 

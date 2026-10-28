@@ -45,16 +45,14 @@ function Update-EdtWtReference {
         [string]$MaxHeap
     )
 
-    $settings = Get-EdtWtSettings
-    $cfg = $settings.Config
-    $refBranch = $settings.ReferenceBranch
+    $cfg = Get-EdtWtConfig
 
     $knownProjects = if ($cfg.projects) { @($cfg.projects.PSObject.Properties | ForEach-Object { $_.Name }) } else { @() }
     $names = if ($Project) { $Project } else { $knownProjects }
     $started = Get-Date
     $report = @()
 
-    Write-Host "==> Обновление эталонов (ветка $refBranch)" -ForegroundColor Green
+    Write-Host "==> Обновление эталонов" -ForegroundColor Green
 
     foreach ($name in $names) {
         $row = [PSCustomObject]@{
@@ -67,10 +65,11 @@ function Update-EdtWtReference {
 
         try {
             if ($name -notin $knownProjects) {
-                throw "проекта нет в projects.json"
+                throw "проект не зарегистрирован (edt project add $name)"
             }
 
-            $repo = Join-Path $script:EdtWtProjectsRoot $name
+            $refBranch = Get-EdtWtProperty $cfg.projects.$name 'ref_branch' 'pre-prod'
+            $repo = Join-Path $cfg.paths.repos_root $name
             if (-not (Test-Path -LiteralPath $repo)) {
                 throw "каталог проекта не найден: $repo"
             }

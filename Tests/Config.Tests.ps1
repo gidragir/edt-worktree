@@ -1,106 +1,105 @@
 ﻿BeforeAll {
+    . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+    $script:Root = New-EdtWtTestRoot
+    $script:CfgPath = Use-EdtWtTestConfig -Root $script:Root
     Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    $script:m = Get-Module EdtWorktree
 }
 
-Describe 'Конфигурация EdtWorktree' {
+AfterAll {
+    Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
+    Remove-Item env:EDT_LEGACY_CONFIG_PATH -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $script:Root) {
+        Remove-Item -LiteralPath $script:Root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Конфигурация EdtWorktree v3' {
+    BeforeEach {
+        Remove-Item -LiteralPath $script:CfgPath -Force -ErrorAction SilentlyContinue
+    }
+
+    Context 'Чтение' {
+        It 'без файла возвращает дефолты v3 и ничего не пишет' {
+            $cfg = & $m { Get-EdtWtConfig }
+            $cfg.version | Should -Be 3
+            $cfg.git.remote | Should -Be 'origin'
+            $cfg.git.branch_prefix | Should -Be 'feature/'
+            $cfg.edt.timeout_sec | Should -Be 7200
+            Test-Path $script:CfgPath | Should -BeFalse
+        }
+
+        It 'Get-EdtWtUserConfigPath уважает EDT_CONFIG_PATH' {
+            & $m { Get-EdtWtUserConfigPath } | Should -Be $script:CfgPath
+        }
+
+        It 'файл накладывается поверх дефолтов, неизвестные ключи сохраняются' {
+            '{"paths":{"repos_root":"X:\\repos"},"custom":{"x":1}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
+            $cfg = & $m { Get-EdtWtConfig }
+            $cfg.paths.repos_root | Should -Be 'X:\repos'
+            $cfg.paths.worktrees_root | Should -Not -BeNullOrEmpty
+            $cfg.edt.timeout_sec | Should -Be 7200
+            $cfg.custom.x | Should -Be 1
+        }
+
+        It 'битый JSON: понятная ошибка, файл не перезаписан' {
+            '{ broken' | Set-Content $script:CfgPath
+            { & $m { Get-EdtWtConfig } } | Should -Throw '*Конфиг повреждён*'
+            Get-Content $script:CfgPath -Raw | Should -Match '\{ broken'
+        }
+    }
+
+    Context 'Сохранение' {
+        It 'round-trip сохраняет проекты и неизвестные ключи' {
+            '{"version":3,"custom":{"x":1},"projects":{"p":{"ref_branch":"main","cf_project":"src/cf","extensions":["src/cfe"]}}}' |
+                Set-Content $script:CfgPath -Encoding utf8NoBOM
+            & $m { Save-EdtWtConfig -Config (Get-EdtWtConfig) } | Out-Null
+            $j = Get-Content $script:CfgPath -Raw | ConvertFrom-Json
+            $j.custom.x | Should -Be 1
+            $j.projects.p.extensions | Should -Be @('src/cfe')
+            $j.git.remote | Should -Be 'origin'
+        }
+
+        It 'пишет UTF-8 без BOM и возвращает путь' {
+            $saved = & $m { Save-EdtWtConfig -Config (New-EdtWtDefaultConfig) }
+            $saved | Should -Be $script:CfgPath
+            ([IO.File]::ReadAllBytes($script:CfgPath))[0] | Should -Not -Be 0xEF
+        }
+
+        It 'не оставляет временных файлов рядом с конфигом' {
+            & $m { Save-EdtWtConfig -Config (New-EdtWtDefaultConfig) } | Out-Null
+            @(Get-ChildItem -LiteralPath $script:Root -Filter 'config.json*').Name | Should -Be @('config.json')
+        }
+    }
+
+    Context 'Проекты' {
+        It 'Get-EdtWtProjectDef для незарегистрированного проекта подсказывает edt project add' {
+            { & $m { Get-EdtWtProjectDef -Config (New-EdtWtDefaultConfig) -Name 'zzz' } } | Should -Throw '*edt project add zzz*'
+        }
+
+        It 'Get-EdtWtProjectDef возвращает описание зарегистрированного проекта' {
+            '{"projects":{"p":{"ref_branch":"main"}}}' | Set-Content $script:CfgPath -Encoding utf8NoBOM
+            $def = & $m { Get-EdtWtProjectDef -Config (Get-EdtWtConfig) -Name 'p' }
+            $def.ref_branch | Should -Be 'main'
+        }
+    }
+
+    Context 'Интерактивность' {
+        It 'Test-EdtWtInteractive возвращает bool' {
+            (& $m { Test-EdtWtInteractive }) | Should -BeOfType [bool]
+        }
+    }
+
     Context 'Автопоиск EDT' {
         It 'Find-EdtWtCli возвращает список или пустой массив без падения' {
-            $clis = & (Get-Module EdtWorktree) { Find-EdtWtCli }
-            $clis | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Чтение и слияние конфигурации' {
-        It 'Get-EdtConfig возвращает объект с базовыми полями' {
-            $cfg = Get-EdtConfig
-            $cfg.PSObject.Properties.Name | Should -Contain 'ProjectsRoot'
-            $cfg.PSObject.Properties.Name | Should -Contain 'WorktreeRoot'
-            $cfg.PSObject.Properties.Name | Should -Contain 'WorkspacesRoot'
-            $cfg.PSObject.Properties.Name | Should -Contain 'EdtCliPath'
-            $cfg.PSObject.Properties.Name | Should -Contain 'ReferenceBranch'
-        }
-
-        It 'Get-EdtConfig -AsJson возвращает валидный JSON' {
-            $jsonStr = Get-EdtConfig -AsJson
-            $parsed = $jsonStr | ConvertFrom-Json
-            $parsed.ProjectsRoot | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Сохранение и изменение настроек' {
-        BeforeAll {
-            $script:TempConfigDir = Join-Path ([System.IO.Path]::GetTempPath()) ("edt_cfg_" + [guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $script:TempConfigDir -Force | Out-Null
-            $script:TempConfigFile = Join-Path $script:TempConfigDir 'config.json'
-            $env:EDT_CONFIG_PATH = $script:TempConfigFile
-        }
-
-        AfterAll {
-            Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $script:TempConfigDir) {
-                Remove-Item -LiteralPath $script:TempConfigDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It 'Set-EdtConfig сохраняет параметры и обновляет конфигурацию' {
-            Set-EdtConfig -WorkspacesRoot 'T:\test-workspaces' -MaxHeap '16g' -ReferenceBranch 'main' -Confirm:$false
-
-            Test-Path -LiteralPath $script:TempConfigFile | Should -BeTrue
-            $savedJson = Get-Content -Raw -LiteralPath $script:TempConfigFile -Encoding UTF8 | ConvertFrom-Json
-            $savedJson.paths.workspaces_root | Should -Be 'T:\test-workspaces'
-            $savedJson.edt.jvm.max_heap | Should -Be '16g'
-            $savedJson.defaults.reference_branch | Should -Be 'main'
-        }
-
-        It 'Set-EdtConfig отклоняет невалидный формат размера памяти' {
-            { Set-EdtConfig -MaxHeap 'invalid' -Confirm:$false } | Should -Throw
-        }
-    }
-
-    Context 'Инициализация проекта .edt-worktree.json' {
-        BeforeAll {
-            $script:TempRepoDir = Join-Path ([System.IO.Path]::GetTempPath()) ("edt_repo_" + [guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $script:TempRepoDir -Force | Out-Null
-        }
-
-        AfterAll {
-            if (Test-Path -LiteralPath $script:TempRepoDir) {
-                Remove-Item -LiteralPath $script:TempRepoDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It 'New-EdtProjectConfig создает валидный .edt-worktree.json' {
-            # Проверяем создание файла напрямую
-            $projFile = Join-Path $script:TempRepoDir '.edt-worktree.json'
-            $template = [ordered]@{
-                cf_project        = 'my-custom-cf'
-                reference_branch  = 'master'
-                v8version         = '8.3.24'
-                active_extensions = @()
-                ignored_patterns  = @()
-                ibconnection      = ''
-            }
-            Set-Content -LiteralPath $projFile -Value (ConvertTo-Json $template) -Encoding UTF8
-
-            $found = & (Get-Module EdtWorktree) {
-                param($p) Get-EdtWtProjectConfigFile -Path $p
-            } $script:TempRepoDir
-
-            $found | Should -Be $projFile
-
-            $cfg = & (Get-Module EdtWorktree) {
-                param($p) Get-EdtWtConfig -Path $p
-            } $script:TempRepoDir
-
-            $cfg.ActiveProjectId | Should -Be 'my-custom-cf'
-            $cfg.projects.'my-custom-cf'.reference_branch | Should -Be 'master'
+            { & $m { Find-EdtWtCli } } | Should -Not -Throw
         }
     }
 
     Context 'Безопасность Set-StrictMode и пустые коллекции' {
         It 'Get-EdtWtProperty не выбрасывает исключение для пустого объекта' {
             $empty = [PSCustomObject]@{}
-            $val = & (Get-Module EdtWorktree) {
+            $val = & $m {
                 param($o) Get-EdtWtProperty $o 'missing' 'default_val'
             } $empty
             $val | Should -Be 'default_val'
@@ -108,7 +107,7 @@ Describe 'Конфигурация EdtWorktree' {
 
         It 'Resolve-EdtWtTarget не падает при отсутствии проектов в реестре' {
             {
-                & (Get-Module EdtWorktree) {
+                & $m {
                     Resolve-EdtWtTarget -Positional @() -Command 'open'
                 }
             } | Should -Not -Throw
@@ -116,11 +115,10 @@ Describe 'Конфигурация EdtWorktree' {
 
         It 'Get-EdtWtProjectIdFromRepo не падает при пустом Projects' {
             $empty = [PSCustomObject]@{}
-            $res = & (Get-Module EdtWorktree) {
+            $res = & $m {
                 param($p) Get-EdtWtProjectIdFromRepo -GitCommonDir 'C:\dummy\.git' -Projects $p
             } $empty
             $res | Should -BeNullOrEmpty
         }
     }
 }
-

@@ -1,35 +1,12 @@
 ﻿# ==============================================================================
-# Configuration.ps1 - Конфигурация, переменные путей и реестр проектов
+# Configuration.ps1 - Конфигурация v3: дефолты, чтение, сохранение, реестр проектов
 # ==============================================================================
 
 Set-StrictMode -Version Latest
 
 # ------------------------------------------------------------------------------
-# 1. Значения по умолчанию и переменные окружения
+# 1. Константы модуля
 # ------------------------------------------------------------------------------
-
-# Значения по умолчанию, если в config.json / projects.json нет секции paths/worktree.
-$script:EdtWtDefaultRoot = if (Test-Path "D:\workspaces\worktree") { "D:\workspaces\worktree" } else { Join-Path $env:USERPROFILE "edt-workspaces" }
-$script:EdtWtDefaultRefBranch = "pre-prod"
-
-# Корень исходных репозиториев проектов.
-$script:EdtWtProjectsRoot = if ($env:PROJECTS_ROOT) {
-    $env:PROJECTS_ROOT
-} elseif (Test-Path "D:\projects\default") {
-    "D:\projects\default"
-} else {
-    Join-Path $env:USERPROFILE "projects\default"
-}
-
-# Корень git-worktree проектов.
-$script:EdtWtWorktreeRoot = if ($env:PROJECTS_WORKTREE_ROOT) {
-    $env:PROJECTS_WORKTREE_ROOT
-} elseif (Test-Path "D:\projects\worktree") {
-    "D:\projects\worktree"
-} else {
-    Join-Path $env:USERPROFILE "projects\worktree"
-}
-
 # Пользовательские настройки IDE: тема, шрифты, цвета, раскладка горячих клавиш,
 # настройки редактора BSL. Всё это Eclipse хранит per-workspace в .prefs-файлах,
 # поэтому каждая новая рабочая область стартует с настройками по умолчанию.
@@ -117,321 +94,174 @@ function Get-EdtWtProjectIdFromRepo {
 }
 
 # ------------------------------------------------------------------------------
-# 3. Пути конфигурационных файлов и чтение/слияние настроек
+# 2. Конфиг v3: путь, дефолты, чтение и сохранение
 # ------------------------------------------------------------------------------
 
 function Get-EdtWtUserConfigPath {
     <#
-    .SYNOPSIS
-        Возвращает путь к пользовательскому конфигурационному файлу.
+      Путь к config.json: EDT_CONFIG_PATH, иначе %APPDATA%\EdtWorktree\config.json.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param()
 
-    if ($env:EDT_CONFIG_PATH) {
-        return $env:EDT_CONFIG_PATH
-    }
-
-    $appData = [Environment]::GetFolderPath('ApplicationData')
-    $primary = Join-Path $appData "EdtWorktree\config.json"
-    if (Test-Path -LiteralPath $primary) { return $primary }
-
-    $legacy = Join-Path $env:USERPROFILE ".config\1c\projects.json"
-    if (Test-Path -LiteralPath $legacy) { return $legacy }
-
-    return $primary
+    if ($env:EDT_CONFIG_PATH) { return $env:EDT_CONFIG_PATH }
+    return (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'EdtWorktree\config.json')
 }
 
-function Get-EdtWtProjectConfigFile {
+function New-EdtWtDefaultConfig {
     <#
-    .SYNOPSIS
-        Ищет .edt-worktree.json в текущем git-репозитории.
+      Схема конфига v3 (spec 5.1) со значениями по умолчанию. null означает
+      «определять автоматически при каждом запуске».
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param()
+
+    $profileDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+    $pick = {
+        param($Preferred, $Fallback)
+        if (Test-Path -LiteralPath $Preferred) { $Preferred } else { $Fallback }
+    }
+
+    return [PSCustomObject]@{
+        version  = 3
+        paths    = [PSCustomObject]@{
+            repos_root      = & $pick 'D:\projects\default' (Join-Path $profileDir 'projects')
+            worktrees_root  = & $pick 'D:\projects\worktree' (Join-Path $profileDir 'projects\worktree')
+            workspaces_root = & $pick 'D:\workspaces\worktree' (Join-Path $profileDir 'edt-workspaces')
+        }
+        edt      = [PSCustomObject]@{
+            cli_path     = $null
+            vm_path      = $null
+            prefs_source = $null
+            max_heap     = $null
+            gui_max_heap = $null
+            extra_vmargs = ''
+            timeout_sec  = 7200
+        }
+        git      = [PSCustomObject]@{
+            remote        = 'origin'
+            branch_prefix = 'feature/'
+        }
+        projects = [PSCustomObject]@{}
+    }
+}
+
+function Merge-EdtWtConfigObject {
+    <#
+      Глубокое слияние: значения Override ложатся поверх Base, неизвестные ключи
+      сохраняются. Явный null в Override не затирает непустое значение Base.
     #>
     [CmdletBinding()]
-    [OutputType([string])]
-    param([string]$Path)
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$Base,
+        [PSCustomObject]$Override
+    )
 
-    $startPath = if ($Path) { $Path } else { (Get-Location).Path }
-    if (-not (Test-Path -LiteralPath $startPath)) { return $null }
+    if ($null -eq $Override) { return $Base }
 
-    # 1. Быстрая проверка прямо в каталоге
-    $direct = Join-Path $startPath ".edt-worktree.json"
-    if (Test-Path -LiteralPath $direct) { return $direct }
-
-    # 2. Если доступен git, проверяем корень репозитория
-    $gitCmd = Get-Command "git" -ErrorAction SilentlyContinue
-    if (-not $gitCmd) { return $null }
-
-    Push-Location -LiteralPath $startPath
-    try {
-        $topLevel = (Invoke-EdtWtGit rev-parse --show-toplevel 2>$null)
-        if ($topLevel) {
-            $topLevel = ($topLevel -replace '/', '\')
-            $projFile = Join-Path $topLevel ".edt-worktree.json"
-            if (Test-Path -LiteralPath $projFile) { return $projFile }
-
-            # Проверка git-common-dir для worktree
-            $gitCommonDir = (Invoke-EdtWtGit rev-parse --git-common-dir 2>$null)
-            if ($gitCommonDir) {
-                if (-not [System.IO.Path]::IsPathRooted($gitCommonDir)) {
-                    $gitCommonDir = Join-Path $topLevel $gitCommonDir
-                }
-                $parentRepo = Split-Path -Parent ($gitCommonDir -replace '/', '\')
-                $projFile2 = Join-Path $parentRepo ".edt-worktree.json"
-                if (Test-Path -LiteralPath $projFile2) { return $projFile2 }
-            }
+    foreach ($prop in $Override.PSObject.Properties) {
+        $existing = $Base.PSObject.Properties[$prop.Name]
+        if ($null -eq $existing) {
+            Add-Member -InputObject $Base -MemberType NoteProperty -Name $prop.Name -Value $prop.Value
+            continue
         }
-    } finally {
-        Pop-Location
+        if ($prop.Value -is [PSCustomObject] -and $existing.Value -is [PSCustomObject]) {
+            $existing.Value = Merge-EdtWtConfigObject -Base $existing.Value -Override $prop.Value
+            continue
+        }
+        if ($null -eq $prop.Value -and $null -ne $existing.Value) { continue }
+        $existing.Value = $prop.Value
     }
+    return $Base
+}
+
+function Invoke-EdtWtConfigMigration {
+    <#
+      Заглушка до Task 2: миграции с 2.x пока нет, конфиг не найден.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param()
 
     return $null
 }
 
 function Get-EdtWtConfig {
     <#
-    .SYNOPSIS
-        Возвращает объединенную конфигурацию модуля EdtWorktree.
-    .DESCRIPTION
-        Сливает:
-        1. Встроенные дефолты модуля
-        2. Пользовательский конфиг (%APPDATA%\EdtWorktree\config.json или ~/.config/1c/projects.json)
-        3. Конфиг проекта (.edt-worktree.json в корне git)
+      Конфиг v3. Файл есть - его JSON поверх дефолтов. Файла нет - миграция с 2.x
+      (если нашлось что переносить), иначе дефолты без записи на диск.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
-    param([string]$Path)
+    param()
 
-    # 1. Базовые дефолты
-    $workspacesRoot = if ($script:EdtWtDefaultRoot) { $script:EdtWtDefaultRoot } else { Join-Path $env:USERPROFILE "edt-workspaces" }
-    $projectsRoot = if ($script:EdtWtProjectsRoot) { $script:EdtWtProjectsRoot } else { Join-Path $env:USERPROFILE "projects\default" }
-    $worktreeRoot = if ($script:EdtWtWorktreeRoot) { $script:EdtWtWorktreeRoot } else { Join-Path $env:USERPROFILE "projects\worktree" }
+    $path = Get-EdtWtUserConfigPath
+    $config = New-EdtWtDefaultConfig
 
-    $config = [PSCustomObject]@{
-        paths      = [PSCustomObject]@{
-            projects_root   = $projectsRoot
-            worktree_root   = $worktreeRoot
-            workspaces_root = $workspacesRoot
-        }
-        defaults   = [PSCustomObject]@{
-            reference_branch = 'pre-prod'
-            '1cedtcli'       = $null
-            edt_prefs_source = ''
-            jvm              = [PSCustomObject]@{
-                max_heap   = '12g'
-                min_heap   = '2g'
-                extra_args = ''
-            }
-            timeouts         = [PSCustomObject]@{
-                export_batch_sec = 7200
-            }
-        }
-        projects   = [PSCustomObject]@{}
-        worktree   = [PSCustomObject]@{
-            root_dir         = $workspacesRoot
-            reference_branch = 'pre-prod'
-        }
+    if (-not (Test-Path -LiteralPath $path)) {
+        $migrated = Invoke-EdtWtConfigMigration
+        if ($null -eq $migrated) { return $config }
+        return (Merge-EdtWtConfigObject -Base $config -Override $migrated)
     }
 
-    # 2. Пользовательский конфиг (с поддержкой fallback на ~/.config/1c/projects.json)
-    $explicitCfgPath = $env:EDT_CONFIG_PATH
-    $primaryCfgPath = Join-Path ([Environment]::GetFolderPath('ApplicationData')) "EdtWorktree\config.json"
-    $legacyCfgPath = Join-Path $env:USERPROFILE ".config\1c\projects.json"
-
-    $configsToLoad = @()
-    if ($explicitCfgPath) {
-        if (Test-Path -LiteralPath $explicitCfgPath) {
-            $configsToLoad += $explicitCfgPath
+    $userJson = $null
+    try {
+        $raw = Get-Content -Raw -LiteralPath $path -Encoding UTF8
+        if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            $userJson = $raw | ConvertFrom-Json -ErrorAction Stop
         }
-    } else {
-        # Сначала подгружаем legacy projects.json как fallback
-        if (Test-Path -LiteralPath $legacyCfgPath) {
-            $configsToLoad += $legacyCfgPath
-        }
-        # Затем основной конфиг пользователя (перекрывает пути, jvm и т.д.)
-        if (Test-Path -LiteralPath $primaryCfgPath) {
-            $configsToLoad += $primaryCfgPath
-        }
+    } catch {
+        throw "Конфиг повреждён: ${path}: $($_.Exception.Message). Исправьте файл или удалите его и выполните edt setup."
     }
 
-    foreach ($cfgPath in $configsToLoad) {
-        try {
-            $userJson = Get-Content -Raw -LiteralPath $cfgPath -Encoding UTF8 | ConvertFrom-Json
-            if ($userJson) {
-                if ($null -ne $userJson.PSObject.Properties['defaults'] -and $userJson.defaults) {
-                    foreach ($prop in $userJson.defaults.PSObject.Properties) {
-                        Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name $prop.Name -Value $prop.Value -Force
-                    }
-                }
-                if ($null -ne $userJson.PSObject.Properties['worktree'] -and $userJson.worktree) {
-                    $config.worktree = $userJson.worktree
-                    if ($null -ne $userJson.worktree.PSObject.Properties['root_dir']) {
-                        $config.paths.workspaces_root = $userJson.worktree.root_dir
-                    }
-                    if ($null -ne $userJson.worktree.PSObject.Properties['reference_branch']) {
-                        Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name 'reference_branch' -Value $userJson.worktree.reference_branch -Force
-                    }
-                }
-                if ($null -ne $userJson.PSObject.Properties['paths'] -and $userJson.paths) {
-                    if ($null -ne $userJson.paths.PSObject.Properties['projects_root']) {
-                        $config.paths.projects_root = $userJson.paths.projects_root
-                    }
-                    if ($null -ne $userJson.paths.PSObject.Properties['worktree_root']) {
-                        $config.paths.worktree_root = $userJson.paths.worktree_root
-                    }
-                    if ($null -ne $userJson.paths.PSObject.Properties['workspaces_root']) {
-                        $config.paths.workspaces_root = $userJson.paths.workspaces_root
-                        $config.worktree.root_dir = $userJson.paths.workspaces_root
-                    }
-                }
-                if ($null -ne $userJson.PSObject.Properties['edt'] -and $userJson.edt) {
-                    if ($null -ne $userJson.edt.PSObject.Properties['cli_path']) {
-                        Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name '1cedtcli' -Value $userJson.edt.cli_path -Force
-                    }
-                    if ($null -ne $userJson.edt.PSObject.Properties['jvm']) {
-                        Add-Member -InputObject $config.defaults -MemberType NoteProperty -Name 'jvm' -Value $userJson.edt.jvm -Force
-                    }
-                }
-                if ($null -ne $userJson.PSObject.Properties['projects'] -and $userJson.projects) {
-                    foreach ($pProp in $userJson.projects.PSObject.Properties) {
-                        Add-Member -InputObject $config.projects -MemberType NoteProperty -Name $pProp.Name -Value $pProp.Value -Force
-                    }
-                }
-            }
-        } catch {
-            Write-Warning "Ошибка чтения пользовательского конфига ($cfgPath): $($_.Exception.Message)"
-        }
-    }
-
-    # Автопоиск EDT, если путь не задан
-    if (-not $config.defaults.'1cedtcli') {
-        $found = Find-EdtWtCli
-        if ($found -and $found.Count -gt 0) {
-            $config.defaults.'1cedtcli' = $found[0].Path
-        }
-    }
-
-    # Синхронизация script-переменных
-    $script:EdtWtProjectsRoot = $config.paths.projects_root
-    $script:EdtWtWorktreeRoot = $config.paths.worktree_root
-    $script:EdtWtDefaultRoot = $config.paths.workspaces_root
-    $script:EdtWtDefaultRefBranch = $config.defaults.reference_branch
-
-    # 3. Конфиг проекта (.edt-worktree.json)
-    $projectCfgFile = Get-EdtWtProjectConfigFile -Path $Path
-    if ($projectCfgFile) {
-        try {
-            $projJson = Get-Content -Raw -LiteralPath $projectCfgFile -Encoding UTF8 | ConvertFrom-Json
-            if ($projJson) {
-                $projId = if ($null -ne $projJson.PSObject.Properties['project_id'] -and $projJson.project_id) {
-                    $projJson.project_id
-                } elseif ($null -ne $projJson.PSObject.Properties['project_name'] -and $projJson.project_name) {
-                    $projJson.project_name
-                } elseif ($null -ne $projJson.PSObject.Properties['name'] -and $projJson.name) {
-                    $projJson.name
-                } elseif ($null -ne $projJson.PSObject.Properties['cf_project'] -and $projJson.cf_project -and ($projJson.cf_project -notmatch '[\\/]')) {
-                    $projJson.cf_project
-                } else {
-                    Split-Path -Leaf (Split-Path -Parent $projectCfgFile)
-                }
-
-                # Добавляем или обновляем проект в реестре
-                $projProps = @{}
-                foreach ($prop in $projJson.PSObject.Properties) {
-                    $projProps[$prop.Name] = $prop.Value
-                }
-                if (-not $projProps.ContainsKey('1cedtcli') -or -not $projProps['1cedtcli']) {
-                    $projProps['1cedtcli'] = $config.defaults.'1cedtcli'
-                }
-
-                # Регистрируем в объекте projects
-                Add-Member -InputObject $config.projects -MemberType NoteProperty -Name $projId -Value ([PSCustomObject]$projProps) -Force
-                Add-Member -InputObject $config -MemberType NoteProperty -Name 'ActiveProjectConfigFile' -Value $projectCfgFile -Force
-                Add-Member -InputObject $config -MemberType NoteProperty -Name 'ActiveProjectId' -Value $projId -Force
-            }
-        } catch {
-            Write-Warning "Ошибка чтения .edt-worktree.json ($projectCfgFile): $($_.Exception.Message)"
-        }
-    }
-
-    return $config
-}
-
-# Реестр проектов (Repository): единственное место чтения projects.json.
-function Get-EdtWtProjectsConfig {
-    [CmdletBinding()]
-    [OutputType([PSCustomObject])]
-    param(
-        [string]$Path
-    )
-
-    if ($Path) {
-        if (-not (Test-Path -LiteralPath $Path)) {
-            throw "Конфигурационный файл не найден: $Path"
-        }
-        return (Get-Content -Raw -LiteralPath $Path -Encoding UTF8 | ConvertFrom-Json)
-    }
-
-    return (Get-EdtWtConfig)
-}
-
-function Get-EdtWtSettings {
-    $cfg = Get-EdtWtProjectsConfig
-    $root = $script:EdtWtDefaultRoot
-    $refBranch = $script:EdtWtDefaultRefBranch
-    $worktree = Get-EdtWtProperty $cfg 'worktree'
-    $root = Get-EdtWtProperty $worktree 'root_dir' $root
-    $refBranch = Get-EdtWtProperty $worktree 'reference_branch' $refBranch
-    return [PSCustomObject]@{
-        Config          = $cfg
-        RootDir         = ($root -replace '/', '\')
-        ReferenceBranch = $refBranch
-    }
+    if ($userJson -isnot [PSCustomObject]) { return $config }
+    return (Merge-EdtWtConfigObject -Base $config -Override $userJson)
 }
 
 function Save-EdtWtConfig {
     <#
-    .SYNOPSIS
-        Сохраняет конфигурацию пользователя в файл.
+      Пишет схему целиком (дефолты + переданный объект), UTF-8 без BOM:
+      сначала во временный файл, затем подмена исходного.
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
-        [Parameter(Mandatory)]
-        [PSCustomObject]$Config,
-
-        [string]$Path
+        [Parameter(Mandatory)][PSCustomObject]$Config
     )
 
-    $savePath = if ($Path) { $Path } else { Get-EdtWtUserConfigPath }
-
-    $parentDir = Split-Path -Parent $savePath
-    if (-not (Test-Path -LiteralPath $parentDir)) {
-        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+    $path = Get-EdtWtUserConfigPath
+    $dir = Split-Path -Parent $path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
-    # Формируем структуру для сохранения
-    $data = [ordered]@{
-        paths    = [ordered]@{
-            projects_root   = $Config.paths.projects_root
-            worktree_root   = $Config.paths.worktree_root
-            workspaces_root = $Config.paths.workspaces_root
-        }
-        edt      = [ordered]@{
-            cli_path = $Config.defaults.'1cedtcli'
-            jvm      = [ordered]@{
-                max_heap     = (Get-EdtWtProperty (Get-EdtWtProperty $Config.defaults 'jvm') 'max_heap' '12g')
-                gui_max_heap = (Get-EdtWtProperty (Get-EdtWtProperty $Config.defaults 'jvm') 'gui_max_heap' '8g')
-                min_heap     = (Get-EdtWtProperty (Get-EdtWtProperty $Config.defaults 'jvm') 'min_heap' '2g')
-            }
-        }
-        defaults = [ordered]@{
-            reference_branch = (Get-EdtWtProperty $Config.defaults 'reference_branch' 'pre-prod')
-            edt_prefs_source = (Get-EdtWtProperty $Config.defaults 'edt_prefs_source' '')
-        }
-    }
+    $full = Merge-EdtWtConfigObject -Base (New-EdtWtDefaultConfig) -Override $Config
+    $json = ConvertTo-Json -InputObject $full -Depth 10
 
-    $json = ConvertTo-Json -InputObject $data -Depth 5
-    Set-Content -LiteralPath $savePath -Value $json -Encoding UTF8
-    return $savePath
+    $tmp = "$path.tmp"
+    [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tmp -Destination $path -Force
+    return $path
+}
+
+function Get-EdtWtProjectDef {
+    <#
+      Описание зарегистрированного проекта из конфига.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$Config,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $projects = Get-EdtWtProperty $Config 'projects'
+    if ($null -eq $projects -or $null -eq $projects.PSObject.Properties[$Name]) {
+        throw "Проект '$Name' не зарегистрирован. Зарегистрируйте: edt project add $Name"
+    }
+    return $projects.$Name
 }

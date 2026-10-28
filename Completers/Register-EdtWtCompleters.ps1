@@ -21,8 +21,8 @@ function Register-EdtWtCompleters {
             $cfg = Get-EdtWtConfig
             if (-not $Project -or ($null -eq $cfg.projects.PSObject.Properties[$Project])) { return @() }
             $def = $cfg.projects.$Project
-            if ($null -eq $def.PSObject.Properties['active_extensions']) { return @() }
-            return @($def.active_extensions)
+            if ($null -eq $def.PSObject.Properties['extensions']) { return @() }
+            return @(@($def.extensions) | ForEach-Object { Split-Path -Leaf $_ })
         }
 
         # Ключи и их значения в подсчёте позиционных не участвуют.
@@ -64,7 +64,7 @@ function Register-EdtWtCompleters {
             # Проект назван - дальше задача либо расширения.
             if ($subcommand -in @('open', 'add', 'remove')) {
                 $cfg = Get-EdtWtConfig
-                $wtRoot = Join-Path $cfg.paths.worktree_root $args_[0]
+                $wtRoot = Join-Path $cfg.paths.worktrees_root $args_[0]
                 if (Test-Path -LiteralPath $wtRoot) {
                     $candidates = @(Get-ChildItem -LiteralPath $wtRoot -Directory -ErrorAction SilentlyContinue |
                         ForEach-Object { $_.Name -replace '^feature-', '' })

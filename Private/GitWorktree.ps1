@@ -89,7 +89,7 @@ function Get-EdtWtWorktreeDir {
     )
 
     $folder = ConvertTo-EdtWtTaskFolder -Task $Task
-    $path = Join-Path (Join-Path $script:EdtWtWorktreeRoot $Project) $folder
+    $path = Join-Path (Join-Path (Get-EdtWtConfig).paths.worktrees_root $Project) $folder
     if (Test-Path -LiteralPath $path) { return $path }
 
     if ($CreateIfMissing) {
@@ -141,17 +141,19 @@ function New-EdtWtWorktree {
         [string]$Base
     )
 
-    $repo = Join-Path $script:EdtWtProjectsRoot $Project
+    $cfg = Get-EdtWtConfig
+    $repo = Join-Path $cfg.paths.repos_root $Project
     if (-not (Test-Path -LiteralPath $repo)) {
         throw "Каталог проекта не найден: $repo"
     }
 
     $folder = ConvertTo-EdtWtTaskFolder -Task $Task
-    $wtPath = Join-Path (Join-Path $script:EdtWtWorktreeRoot $Project) $folder
+    $wtPath = Join-Path (Join-Path $cfg.paths.worktrees_root $Project) $folder
     $branch = "feature/" + ($Task -replace '^feature[-/]', '')
 
     if (-not $Base) {
-        $Base = "origin/" + (Get-EdtWtSettings).ReferenceBranch
+        $projDef = Get-EdtWtProjectDef -Config $cfg -Name $Project
+        $Base = "origin/" + (Get-EdtWtProperty $projDef 'ref_branch' 'pre-prod')
     }
 
     if (-not $PSCmdlet.ShouldProcess($wtPath, "Создать git worktree ветки $branch")) {
@@ -287,7 +289,8 @@ function Resolve-EdtWtTarget {
     )
 
     $items = @($Positional | Where-Object { $_ })
-    $projects = @(@((Get-EdtWtProjectsConfig).projects.PSObject.Properties).ForEach('Name'))
+    $cfg = Get-EdtWtConfig
+    $projects = @(@($cfg.projects.PSObject.Properties).ForEach('Name'))
 
     $result = [PSCustomObject]@{
         Path       = $null
@@ -303,7 +306,7 @@ function Resolve-EdtWtTarget {
             if ($projectGiven) {
                 $result.ProjectId = $items[0]
                 $result.Extensions = @($items | Select-Object -Skip 1)
-                $result.Path = Join-Path $script:EdtWtProjectsRoot $items[0]
+                $result.Path = Join-Path $cfg.paths.repos_root $items[0]
                 if (-not (Test-Path -LiteralPath $result.Path)) {
                     throw "Каталог проекта не найден: $($result.Path)"
                 }

@@ -1,4 +1,18 @@
 ﻿BeforeAll {
+    . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+    $script:HygieneRoot = New-EdtWtTestRoot
+    Use-EdtWtTestConfig -Root $script:HygieneRoot | Out-Null
+}
+
+AfterAll {
+    Remove-Item env:EDT_CONFIG_PATH -ErrorAction SilentlyContinue
+    Remove-Item env:EDT_LEGACY_CONFIG_PATH -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $script:HygieneRoot) {
+        Remove-Item -LiteralPath $script:HygieneRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+BeforeAll {
     Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
 }
 
@@ -48,15 +62,16 @@ Describe 'Update-EdtWtReference' {
         $script:TempCfgFile = Join-Path $script:TempCfgDir 'config.json'
 
         $cfgData = @{
+            version  = 3
             paths    = @{
-                projects_root   = $script:TempCfgDir
-                worktree_root   = $script:TempCfgDir
+                repos_root      = $script:TempCfgDir
+                worktrees_root  = $script:TempCfgDir
                 workspaces_root = $script:TempCfgDir
             }
             projects = @{
                 'test-proj' = @{
-                    cf_project       = 'src/cf'
-                    reference_branch = 'pre-prod'
+                    cf_project = 'src/cf'
+                    ref_branch = 'pre-prod'
                 }
             }
         }
@@ -80,7 +95,7 @@ Describe 'Update-EdtWtReference' {
     It 'сообщает о проекте, которого нет в реестре' {
         $report = @(Update-EdtWtReference -Project 'no-such-project' -WhatIf)
         $report[0].Status | Should -Be 'skipped'
-        $report[0].Detail | Should -BeLike '*projects.json*'
+        $report[0].Detail | Should -BeLike '*не зарегистрирован*'
     }
 
     It 'возвращает отчёт с длительностью по каждому проекту' {
