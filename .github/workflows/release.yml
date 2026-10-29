@@ -49,9 +49,21 @@ jobs:
       # Публикация в Gallery идёт перед созданием Release: если Gallery отказала,
       # Release не создаётся. Публикация необратима.
       - name: Публикация в PowerShell Gallery
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $version = (Import-PowerShellDataFile src/EdtWorktree/EdtWorktree.psd1).ModuleVersion
-          Publish-PSResource -Path "out/EdtWorktree/$version" -Repository PSGallery -ApiKey ${{ secrets.PSGALLERY_API_KEY }}
+          # Каталог для публикации называется как модуль (EdtWorktree), а не по версии.
+          $stage = Join-Path $env:RUNNER_TEMP 'EdtWorktree'
+          if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item -Path "out/EdtWorktree/$version/*" -Destination $stage -Recurse -Force
+          Test-ModuleManifest (Join-Path $stage 'EdtWorktree.psd1') | Out-Null
+          if (-not (Get-Command Publish-PSResource -ErrorAction SilentlyContinue)) {
+            Install-PSResource Microsoft.PowerShell.PSResourceGet -TrustRepository
+          }
+          Publish-PSResource -Path $stage -Repository PSGallery -ApiKey $env:PSGALLERY_API_KEY
 
       - name: GitHub Release
         env:

@@ -35,7 +35,17 @@ Describe 'Документация' {
         $wf | Should -Match 'build\.ps1 -Release'
         $wf | Should -Match 'GITHUB_REF_NAME'
         $wf | Should -Match 'ModuleVersion'
-        $wf.IndexOf('Publish-PSResource') | Should -BeLessThan $wf.IndexOf('gh release create')
+        $wf.LastIndexOf('Publish-PSResource') | Should -BeLessThan $wf.IndexOf('gh release create')
+    }
+
+    It 'release.yml публикует из каталога EdtWorktree после Test-ModuleManifest, ключ через env' {
+        $wf = Get-Content -LiteralPath (Join-Path $script:RepoRoot '.github/workflows/release.yml') -Raw
+        $wf | Should -Match 'Join-Path \$env:RUNNER_TEMP ''EdtWorktree'''
+        $wf | Should -Match 'Test-ModuleManifest'
+        $wf.IndexOf('Test-ModuleManifest') | Should -BeLessThan $wf.LastIndexOf('Publish-PSResource -Path $stage')
+        $wf | Should -Match 'PSGALLERY_API_KEY: \$\{\{ secrets\.PSGALLERY_API_KEY \}\}'
+        $wf | Should -Match '-ApiKey \$env:PSGALLERY_API_KEY'
+        $wf | Should -Match "EDT_INSTALL_NOSETUP = '1'"
     }
 
     It 'CHANGELOG содержит раздел 4.0.0' {
