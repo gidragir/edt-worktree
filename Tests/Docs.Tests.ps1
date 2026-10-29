@@ -14,11 +14,11 @@ Describe 'Документация' {
         $script:Commands | Should -Not -Match '\.config\\bin|\.config/bin|conf\.d'
     }
 
-    It 'README содержит команды установки и раздел обновления с 3.0' {
+    It 'README содержит команды установки и не описывает прежние версии' {
         $script:Readme | Should -Match ([regex]::Escape('Install-PSResource EdtWorktree'))
         $script:Readme | Should -Match ([regex]::Escape('irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1 | iex'))
         $script:Readme | Should -Match ([regex]::Escape('edt setup'))
-        $script:Readme | Should -Match 'Обновление с 3\.0'
+        $script:Readme | Should -Not -Match '3\.0|2\.x|Legacy|_reference_preprod|config\.json\.v2'
         $script:Readme | Should -Not -Match ([regex]::Escape('raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1'))
         $script:Readme | Should -Not -Match ([regex]::Escape('raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1'))
     }

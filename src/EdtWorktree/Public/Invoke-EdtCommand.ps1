@@ -11,7 +11,7 @@
             edt setup                       первичная настройка каталогов
             edt project list|add|ext|set|remove   проекты
             edt open [проект ветка]         открыть рабочую область
-            edt warmup [проект]             собрать эталон
+            edt warmup [проект]             подтянуть ref_branch и собрать эталон
             edt add <расширения>            подключить расширения
             edt remove [проект] [ветка]     удалить область и worktree
             edt status [проект]             что открыто и чем занято
@@ -123,7 +123,7 @@
 
     $allowed = @(switch ($Command) {
         'open' { @('-Refresh', '-NoGui', '-WhatIf', '-Yes') }
-        'warmup' { @('-WhatIf', '-Yes') }
+        'warmup' { @('-SkipGit', '-WhatIf', '-Yes') }
         'add' { @('-NoGui', '-WhatIf', '-Yes') }
         'remove' { @('-WhatIf', '-Yes') }
         'update' { @('-SkipGit', '-WhatIf', '-Yes') }
@@ -183,6 +183,7 @@
 
         'warmup' {
             $params = $common.Clone()
+            if ($parsed.Flags.SkipGit) { $params['SkipGit'] = $true }
 
             Confirm-EdtWtProjectKnown -Name ($positional | Select-Object -First 1) -Params $common
             $target = Resolve-EdtWtTarget -Positional $positional -Command 'warmup'

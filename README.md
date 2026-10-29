@@ -83,26 +83,12 @@ pwsh -NoProfile -File D:\tools\install.ps1 -ZipPath D:\tools\EdtWorktree.zip
 `edt open my-project TASK-123 -NoGui` вызывается из cmd, bash, nushell,
 планировщика и агентов. `edt doctor` проверяет shim и PATH.
 
-### Обновление с 3.0
-
-В 3.0 модуль ставился клоном репозитория в `%LOCALAPPDATA%\EdtWorktree`.
-`edt self-update` из 3.0 новый модуль не ставит (он делает `git pull` в клоне),
-поэтому обновитесь одной командой установки:
-
-```powershell
-irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1 | iex
-```
-
-или `Install-PSResource EdtWorktree`, а затем `edt setup`. Установщик снимает
-ссылку модуля 3.0 и старый `bin` в PATH, ставит shim. Клон, конфиг, проекты,
-worktree и рабочие области не трогаются; клон можно удалить вручную.
-
 ## Первые шаги
 
 ```powershell
 edt setup                       # каталоги клонов, worktree и рабочих областей; поиск EDT
 edt project add my-project      # конфигурация и рабочие расширения - номерами из списка
-edt warmup my-project           # эталон с индексами и валидацией
+edt warmup my-project           # подтянуть ref_branch, собрать эталон с индексами и проверками
 edt open my-project TASK-123    # worktree feature/TASK-123, рабочая область, IDE
 ```
 
@@ -113,7 +99,9 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 - Имя проекта - имя папки клона в `repos_root`. `edt project add` без имени
   предлагает зарегистрировать все новые клоны.
 - Эталонная ветка проекта (`ref_branch`) берётся из текущей ветки клона при
-  регистрации. Клон должен стоять на ней, когда собирается эталон.
+  регистрации. Клон должен стоять на ней, когда собирается эталон; `warmup`
+  сначала подтягивает её с `git.remote` (fetch и перемотка вперёд), а при
+  незакоммиченных правках или расхождении с remote эталон не трогает.
 - Повторно `edt open` можно вызывать без аргументов из каталога worktree.
 
 В репозиториях проектов модуль ничего не создаёт: вся настройка хранится на
@@ -129,12 +117,12 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 | `edt project ext <проект> [+имя] [-имя]` | Рабочие расширения: без правок - список с отметками, с правками - без диалога |
 | `edt project set <проект> -RefBranch <ветка> \| -CfProject <путь>` | Редкие правки проекта |
 | `edt project remove <проект>` | Убрать проект из конфига; файлы не трогаются |
-| `edt warmup [проект]` | Собрать эталон из клона: конфигурация + рабочие расширения, затем `validate` |
+| `edt warmup [проект]` | Подтянуть `ref_branch` клона и собрать эталон: конфигурация + рабочие расширения, `build`, `validate`. Прежний эталон заменяется только полностью собранным. Ключ `-SkipGit` |
 | `edt open [проект ветка]` | Worktree (создаётся при необходимости), рабочая область из эталона, IDE. Ключи `-NoGui`, `-Refresh` |
 | `edt add <расширения>` | Подключить расширения к области текущего worktree; IDE перезапускается |
 | `edt remove [проект] [ветка]` | Удалить рабочую область и git worktree (с подтверждением) |
 | `edt status [проект]` | Области, блокировки и занявшие их процессы |
-| `edt update [проекты]` | Подтянуть `ref_branch` в клонах и пересобрать эталоны; для расписания. Ключ `-SkipGit` |
+| `edt update [проекты]` | Подтянуть `ref_branch` в клонах и пересобрать отставшие эталоны; для расписания. Ключ `-SkipGit` (пересобрать все) |
 | `edt vr <аргументы vrunner>` | vrunner с рабочей областью текущего worktree |
 | `edt doctor` | Проверка окружения и проектов; у каждой проблемы - команда исправления |
 | `edt config [show\|path\|set <ключ> <значение>]` | Показать настройки, путь к файлу, изменить ключ |
@@ -155,8 +143,12 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
   `<remote>/<ref_branch>`.
 - Worktree: `<worktrees_root>\<проект>\<ветка, / заменён на ->`.
 - Рабочая область: `<workspaces_root>\<проект>\<ветка, / заменён на ->`.
-- Эталон: `<workspaces_root>\<проект>\_reference`. Старый `_reference_preprod`
-  переименовывается при первом `warmup`.
+- Эталон: `<workspaces_root>\<проект>\_reference`. Новый эталон собирается рядом, в
+  `_reference.building`, и встаёт на место только после сборки и проверки всех
+  проектов; журналы неудачной сборки остаются в `_reference.failed`.
+- В эталоне лежит `.edtwt-reference.json`: ветка и коммит, с которых он собран.
+  `edt open` предупреждает, если эталон отстал от `<remote>/<ref_branch>`, а
+  `edt update` не пересобирает эталон, уже собранный с текущего коммита.
 
 ### `edt vr`
 
@@ -207,15 +199,18 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
   найденный 1C:EDT, `max_heap`/`gui_max_heap` - по свободной памяти, `vm_path` -
   см. «Решение проблем».
 - `extensions` - рабочие расширения: только они попадают в эталон.
-- `edt.prefs_source` - рабочая область, из которой копируются настройки IDE.
+- `edt.prefs_source` - откуда брать настройки IDE:
+  - файл экспорта настроек EDT (`.epf`, «Файл > Экспорт > Параметры»): все его
+    ключи рабочей области применяются к эталону и к каждой рабочей области
+    ветки, как при импорте вручную. Применяется один раз на версию файла:
+    изменённый экспорт подхватывается при следующем `edt open`, а правки в самой
+    IDE до тех пор не затираются. Открытая в EDT область пропускается;
+  - или рабочая область-донор: из неё копируются только переносимые файлы
+    (тема, шрифты, цвета, клавиши, редактор BSL), уже существующие не
+    перезаписываются.
 - Примеры: `edt config set edt.max_heap 16g`, `edt config set git.remote upstream`,
   `edt config set edt.cli_path null` (вернуть автопоиск).
 - Ключи, которых модуль не знает, при сохранении не теряются.
-
-Конфиг 2.x (`%APPDATA%\EdtWorktree\config.json` без `version: 3` и
-`~/.config/1c/projects.json`) переносится автоматически при первом запуске.
-Прежний файл остаётся рядом как `config.json.v2.bak`, `projects.json` не
-меняется.
 
 ## Обновление и удаление
 
@@ -227,11 +222,9 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 | Gallery | `Install-PSResource EdtWorktree` | `Update-PSResource` (или `Update-Module`), модуль перезагружается в сессии | `Uninstall-PSResource` всех версий, shim и запись PATH |
 | Zip | установщик из выпуска GitHub | скачивает `install.ps1` последнего выпуска и запускает с `-NoSetup` | удаляет каталог модуля, shim и запись PATH |
 | Dev | `scripts/install.ps1 -Dev` | `git pull --ff-only` в клоне разработчика | снимает ссылку модуля, shim и запись PATH |
-| Legacy | клон 3.0 в `%LOCALAPPDATA%\EdtWorktree` | не обновляет, предлагает переустановку: команда установки из «Обновление с 3.0» | снимает ссылку модуля и `bin` клона из PATH |
 
-- `edt uninstall -Purge` - ещё и конфиг (`%APPDATA%\EdtWorktree`) и для Dev и
-  Legacy клон. Клон с незакоммиченными правками не удаляется (будет
-  предупреждение).
+- `edt uninstall -Purge` - ещё и конфиг (`%APPDATA%\EdtWorktree`), а для Dev -
+  клон. Клон с незакоммиченными правками не удаляется (будет предупреждение).
 - Клоны проектов, worktree и рабочие области не затрагиваются ни при обновлении,
   ни при удалении.
 - Повторный запуск команды установки обновляет любую установку, кроме Dev.
@@ -252,6 +245,11 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 - **«Клон стоит на '<x>', эталон собирается с '<ref>'».** Переключите клон
   командой из сообщения (`git -C <клон> switch <ref>`) или поменяйте эталонную
   ветку: `edt project set <проект> -RefBranch <ветка>`.
+- **«Клон не обновлён, эталон не пересобирается».** В клоне незакоммиченные
+  правки или его ветка разошлась с remote. Разберитесь в клоне либо соберите
+  эталон из текущего состояния: `edt warmup <проект> -SkipGit`.
+- **«Эталон собран не полностью».** После `build` у проекта нет результатов
+  проверки; прежний эталон оставлен, журналы - в `_reference.failed`.
 - **«Проект не зарегистрирован».** `edt project add <имя>`.
 - **«Конфиг повреждён».** Исправьте JSON по сообщению или удалите файл и
   выполните `edt setup`.
@@ -307,7 +305,7 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
   `Get-EdtProject`/`Add-EdtProject`/`Set-EdtProject`/`Remove-EdtProject`/`Set-EdtProjectExtension`,
   `Test-EdtEnvironment` (doctor), `Update-EdtSelf`, `Uninstall-EdtWorktree`, `Get-EdtWtContext`.
 - `src/EdtWorktree/Private/` - внутренние функции по областям:
-  - `src/EdtWorktree/Private/Config` - конфиг v3 и перенос с 2.x;
+  - `src/EdtWorktree/Private/Config` - конфиг;
   - `src/EdtWorktree/Private/Discovery` - проекты в клоне, проект по пути;
   - `src/EdtWorktree/Private/Eclipse` - `.location` и имена проектов рабочей области;
   - `src/EdtWorktree/Private/Git` - git (`Invoke-EdtWtGit`), ветки, worktree;

@@ -134,7 +134,24 @@ Describe 'Update-EdtWtReference' {
         $report = @(Update-EdtWtReference -Project 'p' -Confirm:$false 6>&1 | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] })
         $report[0].Status | Should -Be 'updated'
         Test-Path -LiteralPath (Join-Path $script:Repo 'n.txt') | Should -BeTrue
-        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Times 1 -Exactly -ParameterFilter { $ProjectName -eq 'p' }
+        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Times 1 -Exactly -ParameterFilter { $ProjectName -eq 'p' -and $SkipGit }
+    }
+
+    It 'эталон, уже собранный с текущего коммита, не пересобирается' {
+        $ref = Join-Path $script:Wss 'p\_reference'
+        New-Item -ItemType Directory -Force -Path $ref | Out-Null
+        $stampFile = Join-Path $ref '.edtwt-reference.json'
+        [ordered]@{ branch = 'develop'; commit = (git -C $script:Repo rev-parse HEAD) } | ConvertTo-Json | Set-Content -LiteralPath $stampFile -Encoding UTF8
+        try {
+            $report = @(Update-EdtWtReference -Project 'p' -Confirm:$false 6>&1 | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] })
+            $report[0].Status | Should -Be 'current'
+            Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Times 0 -Exactly
+
+            $forced = @(Update-EdtWtReference -Project 'p' -SkipGit -Confirm:$false 6>&1 | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] })
+            $forced[0].Status | Should -Be 'updated'
+        } finally {
+            Remove-Item -LiteralPath $stampFile -Force
+        }
     }
 
     It 'занятый эталон пропускается без закрытия процессов' {

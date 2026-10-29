@@ -34,11 +34,12 @@
 
     Write-Host "==> Клонирование эталона (robocopy)..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Force -Path $Context.ProjectWsRoot | Out-Null
-    & robocopy $Context.ReferenceWsDir $Context.WorkspaceDir /E /XF .lock /NFL /NDL /NJH /NJS /NC /NS /MT:8 | Out-Null
+    & robocopy $Context.ReferenceWsDir $Context.WorkspaceDir /E /XF .lock $script:EdtWtReferenceStampName /NFL /NDL /NJH /NJS /NC /NS /MT:8 | Out-Null
     $rc = $LASTEXITCODE
     if ($rc -ge 8) {
         throw "robocopy завершился с ошибкой (ExitCode $rc). Убедитесь, что эталон не занят работающим EDT."
     }
     Write-Host "    ✓ Клонирование завершено (robocopy rc=$rc)." -ForegroundColor Green
+    Test-EdtWtReferenceFreshness -Context $Context | Out-Null
     return $true
 }

@@ -84,9 +84,21 @@ edt project remove $project
 ```
 
 ## Прогреть эталон
-Собирает эталон из клона на эталонной ветке, с валидацией
+Подтягивает эталонную ветку клона, собирает и проверяет эталон рядом с прежним
 ```snippet-template
 edt warmup $project
+```
+
+## Прогреть без git
+Собирает эталон из текущего состояния клона, без fetch
+```snippet-template
+edt warmup $project -SkipGit
+```
+
+## Настройки IDE из экспорта
+Экспорт .epf применяется к эталону и рабочим областям веток
+```snippet-template
+edt config set edt.prefs_source $epf
 ```
 
 ## Открыть задачу

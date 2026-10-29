@@ -72,6 +72,13 @@
         }
         Write-Host "    перепривязан проект '$($dir.Name)' -> $newPath" -ForegroundColor DarkGray
         $repaired += $dir.Name
+
+        # Привязка EGit (.gitdir относительно старого места) после переноса ведёт
+        # не туда: в worktree .git - файл, и EGit при старте удаляет её с ошибкой.
+        $egit = Join-Path $dir.FullName 'org.eclipse.egit.core'
+        if (-not $isTargetWs -and -not $isTargetWt -and (Test-Path -LiteralPath $egit)) {
+            Remove-Item -LiteralPath $egit -Recurse -Force
+        }
     }
 
     return $repaired

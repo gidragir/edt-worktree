@@ -258,6 +258,11 @@ Describe 'Диспетчер edt: рабочие области' {
         { Invoke-EdtCommand warmup ka cfe_a } | Should -Throw '*Лишние аргументы*'
     }
 
+    It 'warmup --skip-git передаётся в Invoke-EdtWorktreeWarmup' {
+        Invoke-EdtCommand warmup ka --skip-git 6>$null
+        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'ka' -and $SkipGit }
+    }
+
     It 'warmup без аргументов берёт проект текущего каталога (ProjectName не задан)' {
         Invoke-EdtCommand warmup 6>$null
         Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { -not $ProjectName }

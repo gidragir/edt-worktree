@@ -27,6 +27,12 @@
         return $this
     }
 
+    $batch | Add-Member -MemberType ScriptMethod -Name AddBuild -Value {
+        # Без имён 1cedtcli собирает все проекты рабочей области (help build).
+        $this.Commands.Add('build --yes true')
+        return $this
+    }
+
     $batch | Add-Member -MemberType ScriptMethod -Name AddValidate -Value {
         param(
             [Parameter(Mandatory)][string[]]$ProjectNames,

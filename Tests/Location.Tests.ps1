@@ -153,6 +153,48 @@ Describe 'Чтение и перезапись .location' {
         }
     }
 
+    It 'перепривязка проекта на другой каталог убирает устаревшую привязку EGit' {
+        $base = Join-Path ([System.IO.Path]::GetTempPath()) ('loc_' + [guid]::NewGuid().ToString('N'))
+        $tempWs = Join-Path $base 'ws'
+        $tempWt = Join-Path $base 'wt'
+        $projDir = Join-Path $tempWs '.metadata\.plugins\org.eclipse.core.resources\.projects\cf'
+        $egit = Join-Path $projDir 'org.eclipse.egit.core'
+        New-Item -ItemType Directory -Path $egit -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $egit 'GitProjectData.properties') -Value '.gitdir=../../.git'
+        New-Item -ItemType Directory -Path (Join-Path $tempWt 'src\cf') -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $tempWt 'src\cf\.project') -Force | Out-Null
+        New-TestLocationFile -Path (Join-Path $projDir '.location') -Uri 'URI//file:/D:/old/clone/src/cf' | Out-Null
+        try {
+            & (Get-Module EdtWorktree) {
+                param($ws, $wt, $ref)
+                Repair-EdtWtWorkspaceLocations -WorkspaceDir $ws -WorktreePath $wt -ReferenceWsDir $ref
+            } $tempWs $tempWt (Join-Path $base 'ref') 6>$null | Out-Null
+            Test-Path -LiteralPath $egit | Should -BeFalse
+        } finally {
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'исправление только экранирования не трогает привязку EGit' {
+        $base = Join-Path ([System.IO.Path]::GetTempPath()) ('loc_' + [guid]::NewGuid().ToString('N'))
+        $tempWs = Join-Path $base 'ws'
+        $tempWt = Join-Path $base 'wt x'
+        $projDir = Join-Path $tempWs '.metadata\.plugins\org.eclipse.core.resources\.projects\cf'
+        $egit = Join-Path $projDir 'org.eclipse.egit.core'
+        New-Item -ItemType Directory -Path $egit -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $tempWt 'src\cf') -Force | Out-Null
+        New-TestLocationFile -Path (Join-Path $projDir '.location') -Uri "URI//file:/$((Join-Path $tempWt 'src\cf') -replace '\\', '/')" | Out-Null
+        try {
+            & (Get-Module EdtWorktree) {
+                param($ws, $wt, $ref)
+                Repair-EdtWtWorkspaceLocations -WorkspaceDir $ws -WorktreePath $wt -ReferenceWsDir $ref
+            } $tempWs $tempWt (Join-Path $base 'ref') 6>$null | Out-Null
+            Test-Path -LiteralPath $egit | Should -BeTrue
+        } finally {
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'декодирует URI с экранированными пробелами и кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
         $uri = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
         $expected = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'

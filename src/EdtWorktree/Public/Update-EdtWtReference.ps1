@@ -9,7 +9,8 @@
           1. проверяет, что эталон не занят EDT (процессы не закрываются);
           2. в клоне <repos_root>\<проект> делает fetch и перемотку вперёд
              (merge --ff-only) ветки ref_branch с remote из git.remote;
-          3. собирает эталон (Invoke-EdtWorktreeWarmup).
+          3. собирает эталон (Invoke-EdtWorktreeWarmup -SkipGit), если он ещё
+             не собран с этого коммита (иначе статус current).
 
         Грязный клон, клон на другой ветке, занятый эталон и ошибки сборки не
         останавливают обход: проект получает статус skipped с причиной.
@@ -18,7 +19,8 @@
         Какие проекты обновлять. По умолчанию - все из конфигурации.
 
     .PARAMETER SkipGit
-        Не трогать git, только пересобрать эталоны из текущего состояния клонов.
+        Не трогать git, пересобрать эталоны из текущего состояния клонов
+        (в том числе уже собранные с текущего коммита).
 
     .EXAMPLE
         Update-EdtWtReference -WhatIf
@@ -79,7 +81,19 @@
                 }
             }
 
-            $warmupParams = @{ ProjectName = $name }
+            # Эталон уже собран с этого коммита - пересборка ничего не даст.
+            $stamp = Get-EdtWtReferenceStamp -WorkspaceDir $ctx.ReferenceWsDir
+            $head = (Invoke-EdtWtGit -C $repo rev-parse HEAD 2>$null)
+            if (-not $SkipGit -and $stamp -and $head -and $stamp.commit -eq $head) {
+                Write-Host "    [$name] эталон уже собран с $("$head".Substring(0, 9)), пропуск." -ForegroundColor Gray
+                $row.Status = 'current'
+                $row.Seconds = [int]((Get-Date) - $stepStarted).TotalSeconds
+                $report += $row
+                continue
+            }
+
+            # Клон уже обновлён выше: warmup не повторяет fetch.
+            $warmupParams = @{ ProjectName = $name; SkipGit = $true }
             if ($PSBoundParameters.ContainsKey('WhatIf')) { $warmupParams['WhatIf'] = $PSBoundParameters['WhatIf'] }
             if ($PSBoundParameters.ContainsKey('Confirm')) { $warmupParams['Confirm'] = $PSBoundParameters['Confirm'] }
 

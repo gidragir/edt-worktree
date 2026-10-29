@@ -8,6 +8,9 @@
 Set-StrictMode -Version Latest
 
 $script:EdtWtModuleRoot = $PSScriptRoot
+# Отметка сборки эталона в корне его рабочей области: ветка, коммит, время.
+# В рабочие области веток не копируется.
+$script:EdtWtReferenceStampName = '.edtwt-reference.json'
 # Пользовательские настройки IDE: тема, шрифты, цвета, раскладка горячих клавиш,
 # настройки редактора BSL. Всё это Eclipse хранит per-workspace в .prefs-файлах,
 # поэтому каждая новая рабочая область стартует с настройками по умолчанию.
