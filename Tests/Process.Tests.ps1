@@ -72,4 +72,25 @@ Describe 'Invoke-EdtWtCli' {
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'сбой без вывода: в ошибке код, время работы и пометка о пустом выводе' {
+        $root = New-EdtWtTestRoot
+        try {
+            $cli = Join-Path $root 'fakecli.cmd'
+            Set-Content -LiteralPath $cli -Value @('@echo off', 'exit /b 14') -Encoding ASCII
+            $ctx = [pscustomobject]@{ EdtCliPath = $cli; JvmArgs = '-Xmx2g'; TimeoutSec = 60 }
+            $out = & {
+                try {
+                    & (Get-Module EdtWorktree) {
+                        param($c, $w) Invoke-EdtWtCli -Context $c -WorkspaceDir $w -Commands @('version') -MaxHeap '2g'
+                    } $ctx (Join-Path $root 'ws') 6>&1
+                } catch { $_.Exception.Message }
+            } | Out-String
+            $out | Should -Match 'ExitCode 14'
+            $out | Should -Match 'через \d+ с'
+            $out | Should -Match 'вывод пуст'
+        } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

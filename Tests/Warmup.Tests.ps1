@@ -122,16 +122,26 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         Test-Path -LiteralPath "$script:RefDir.previous" | Should -BeFalse
     }
 
-    It 'ошибка сборки сохраняет журнал EDT рядом с эталоном' {
+    It 'ошибка сборки сохраняет журналы EDT и аварийный дамп JVM рядом с эталоном' {
         Mock -ModuleName EdtWorktree -CommandName Invoke-EdtWtCli -MockWith {
             New-Item -ItemType Directory -Force -Path (Join-Path $WorkspaceDir '.metadata') | Out-Null
             Set-Content -LiteralPath (Join-Path $WorkspaceDir '.metadata\.log') -Value 'EDT-ERROR-TRACE'
+            Set-Content -LiteralPath (Join-Path $WorkspaceDir '.metadata\1cedtcli.log') -Value 'CLI-CONSOLE'
+            Set-Content -LiteralPath (Join-Path $WorkspaceDir 'hs_err_pid42.log') -Value 'JVM-CRASH'
             throw 'boom'
         }
         $out = & { try { Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 } catch { $_.Exception.Message } } | Out-String
-        $log = Join-Path $script:Wss 'p\_reference.failed.log'
-        Get-Content -LiteralPath $log -Raw | Should -Match 'EDT-ERROR-TRACE'
-        $out | Should -Match ([regex]::Escape($log))
+        $dir = Join-Path $script:Wss 'p\_reference.failed'
+        Get-Content -LiteralPath (Join-Path $dir '.log') -Raw | Should -Match 'EDT-ERROR-TRACE'
+        Get-Content -LiteralPath (Join-Path $dir '1cedtcli.log') -Raw | Should -Match 'CLI-CONSOLE'
+        Get-Content -LiteralPath (Join-Path $dir 'hs_err_pid42.log') -Raw | Should -Match 'JVM-CRASH'
+        $out | Should -Match ([regex]::Escape($dir))
+    }
+
+    It 'ошибка сборки без журналов: так и сказано' {
+        Mock -ModuleName EdtWorktree -CommandName Invoke-EdtWtCli -MockWith { New-Item -ItemType Directory -Force -Path $WorkspaceDir | Out-Null; throw 'boom' }
+        $out = & { try { Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 } catch { $_.Exception.Message } } | Out-String
+        $out | Should -Match 'журналов не оставил'
     }
 
     It 'ошибка первой сборки не оставляет недособранный эталон' {

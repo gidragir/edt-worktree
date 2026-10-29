@@ -544,6 +544,7 @@ function Invoke-EdtWtCli {
     $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
+    $started = [Diagnostics.Stopwatch]::StartNew()
     $proc = [System.Diagnostics.Process]::Start($psi)
     # stderr читается асинхронно ДО синхронного чтения stdout: иначе переполнение
     # буфера любого из потоков вешает процесс и вызывающего.
@@ -553,9 +554,13 @@ function Invoke-EdtWtCli {
     $proc.WaitForExit()
 
     if ($proc.ExitCode -ne 0) {
-        Write-Host $stdout
-        Write-Host $stderr -ForegroundColor Red
-        throw "1cedtcli завершился с ошибкой (ExitCode $($proc.ExitCode))"
+        if ([string]::IsNullOrWhiteSpace($stdout) -and [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Host '    (вывод пуст: причина - в журналах рабочей области .metadata\.log и 1cedtcli.log)' -ForegroundColor Yellow
+        } else {
+            Write-Host $stdout
+            Write-Host $stderr -ForegroundColor Red
+        }
+        throw "1cedtcli завершился с ошибкой (ExitCode $($proc.ExitCode)) через $([int]$started.Elapsed.TotalSeconds) с"
     }
     Write-Host $stdout
 }
