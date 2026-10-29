@@ -2,6 +2,30 @@
 # Тесты не должны трогать реальный конфиг пользователя: любой тест, загружающий
 # модуль, вызывает Use-EdtWtTestConfig с временным каталогом.
 
+function Get-EdtWtTestRepoRoot {
+    <# Корень репозитория (родитель каталога Tests). #>
+    [OutputType([string])]
+    param()
+
+    return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+}
+
+function Get-EdtWtTestModulePath {
+    <# Манифест тестируемого модуля: $env:EDT_TEST_MODULE, иначе src\EdtWorktree\EdtWorktree.psd1. #>
+    [OutputType([string])]
+    param()
+
+    if ($env:EDT_TEST_MODULE) { return $env:EDT_TEST_MODULE }
+    return Join-Path (Get-EdtWtTestRepoRoot) 'src\EdtWorktree\EdtWorktree.psd1'
+}
+
+function Get-EdtWtTestModuleRoot {
+    <# Каталог тестируемого модуля (там лежат bin\ и манифест). #>
+    [OutputType([string])]
+    param()
+
+    return Split-Path -Parent (Get-EdtWtTestModulePath)
+}
 function New-EdtWtTestRoot {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [OutputType([string])]

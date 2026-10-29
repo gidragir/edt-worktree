@@ -8,7 +8,7 @@ AfterAll {
 }
 
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
+    Import-Module (Get-EdtWtTestModulePath) -Force
     $script:Public = @(
         'Invoke-EdtCommand'
         'Invoke-EdtWorktreeOpen'
@@ -127,7 +127,7 @@ Describe 'Контракт модуля' {
     Context 'bin/edt.ps1 (дочерний процесс)' {
         BeforeAll {
             # Дочерний pwsh наследует окружение: конфиг обязан быть временным.
-            $script:Bin = (Resolve-Path (Join-Path $PSScriptRoot '..\bin\edt.ps1')).Path
+            $script:Bin = (Resolve-Path (Join-Path (Get-EdtWtTestModuleRoot) 'bin\edt.ps1')).Path
             $script:BinRoot = $script:TestCfg.Root
             $env:EDT_CONFIG_PATH | Should -BeLike "$($script:BinRoot)*"
             $env:EDT_LEGACY_CONFIG_PATH | Should -BeLike "$($script:BinRoot)*"

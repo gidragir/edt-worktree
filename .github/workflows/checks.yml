@@ -19,10 +19,10 @@ jobs:
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 
       - name: Тесты и анализатор
-        run: pwsh -NoProfile -File Invoke-EdtWtChecks.ps1
+        run: pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1
 
       - name: Установщик в чистом профиле
         run: |
           $env:EDT_INSTALL_NOSETUP = '1'
-          ./install.ps1
+          ./scripts/install.ps1
           edt help

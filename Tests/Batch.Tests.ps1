@@ -8,7 +8,7 @@ AfterAll {
 }
 
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
+    Import-Module (Get-EdtWtTestModulePath) -Force
 
     $script:NewBatch = { & (Get-Module EdtWorktree) { New-EdtWtBatch } }
 }

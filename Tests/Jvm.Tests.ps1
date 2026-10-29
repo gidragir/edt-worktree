@@ -8,7 +8,7 @@ AfterAll {
 }
 
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
+    Import-Module (Get-EdtWtTestModulePath) -Force
 
     # Фикстура 1cedt.ini: важна именно структура - всё после -vmargs копируется
     # в командную строку целиком, потому что аргументы CLI заменяют секцию ini.

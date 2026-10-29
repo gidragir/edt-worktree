@@ -4,7 +4,7 @@
 каталог worktree и своя рабочая область EDT. Область клонируется из заранее
 прогретого эталона, поэтому EDT не строит индексы заново при каждой задаче.
 
-Шаблоны вызовов: [COMMANDS.md](COMMANDS.md). Справка в консоли: `edt help`,
+Шаблоны вызовов: [COMMANDS.md](docs/COMMANDS.md). Справка в консоли: `edt help`,
 `Get-Help Invoke-EdtCommand -Full`.
 
 ## Требования
@@ -23,7 +23,7 @@
 В PowerShell 7:
 
 ```powershell
-irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1 | iex
 ```
 
 Установщик:
@@ -40,7 +40,7 @@ irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | i
 С параметрами (без автозапуска `edt setup`, другой каталог или ветка):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1))) -NoSetup -InstallDir D:\tools\EdtWorktree
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1))) -NoSetup -InstallDir D:\tools\EdtWorktree
 ```
 
 Ключи: `-InstallDir`, `-Branch`, `-NoSetup`, `-NoPath` (не менять PATH).
@@ -48,7 +48,7 @@ irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | i
 Под `irm | iex` то же задаётся переменными окружения `EDT_INSTALL_DIR`,
 `EDT_INSTALL_BRANCH`, `EDT_INSTALL_NOSETUP=1`.
 
-Из своего клона (режим разработчика): `pwsh -NoProfile -File install.ps1`.
+Из своего клона (режим разработчика): `pwsh -NoProfile -File scripts/install.ps1`.
 Ссылка модуля будет указывать на этот клон.
 
 Ручная установка из ZIP: распакуйте архив, снимите пометку «скачано из
@@ -56,7 +56,7 @@ irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | i
 
 ```powershell
 Get-ChildItem -Recurse D:\tools\edt-worktree | Unblock-File
-pwsh -NoProfile -File D:\tools\edt-worktree\install.ps1
+pwsh -NoProfile -File D:\tools\edt-worktree\scripts\install.ps1
 ```
 
 Без git `edt self-update` в такой установке не работает.
@@ -213,7 +213,7 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 ## Для разработчиков модуля
 
-- Проверки перед коммитом: `pwsh -NoProfile -File Invoke-EdtWtChecks.ps1`
+- Проверки перед коммитом: `pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1`
   (Pester 5 и PSScriptAnalyzer). Нужен Pester 5:
   `Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck`.
 - Тесты не трогают реальный конфиг, PATH и `Documents\PowerShell\Modules`:
@@ -224,21 +224,21 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 - Новая подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в
   `bin/edt.ps1`, `Completers`, `Show-EdtWtUsage`, README, COMMANDS.md и
   `Tests/Contract.Tests.ps1`. Новая публичная функция - ещё и в
-  `FunctionsToExport` в `EdtWorktree.psd1`.
+  `FunctionsToExport` в `src/EdtWorktree/EdtWorktree.psd1`.
 
 ### Карта файлов
 
-- `install.ps1` - установщик (самодостаточный, работает под `irm | iex`).
-- `EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
-- `bin/edt.ps1`, `bin/edt.cmd` - вход для любых оболочек и планировщика.
-- `Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),
+- `scripts/install.ps1` - установщик (самодостаточный, работает под `irm | iex`).
+- `src/EdtWorktree/EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
+- `src/EdtWorktree/bin/edt.ps1`, `bin/edt.cmd` - вход для любых оболочек и планировщика.
+- `src/EdtWorktree/Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),
   `ProjectCommands`, `ConfigCommands` (setup, config), `DoctorCommand`,
   `LifecycleCommands` (update, self-update, uninstall), `Invoke-EdtCommand`
   (диспетчер подкоманд).
-- `Private/` - `Configuration` и `ConfigMigration` (конфиг v3 и перенос с 2.x),
+- `src/EdtWorktree/Private/` - `Configuration` и `ConfigMigration` (конфиг v3 и перенос с 2.x),
   `ProjectDiscovery` (проекты в клоне, проект по пути), `GitWorktree` (ветки,
   worktree, сборка эталона), `EdtProcess` (поиск EDT, JVM, запуск GUI и
   `1cedtcli`, процессы), `EclipseLocation` (`.location`), `Workspace` (рабочие
   области, настройки IDE, справка), `Interaction` (диалоги).
-- `Completers/` - автодополнение `edt`.
+- `src/EdtWorktree/Completers/` - автодополнение `edt`.
 - `Tests/` - Pester 5.

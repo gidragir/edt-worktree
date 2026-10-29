@@ -357,7 +357,7 @@ function Update-EdtSelf {
     Write-Host "    $out" -ForegroundColor Gray
 
     Write-Host '==> Перезагрузка модуля в сессии...' -ForegroundColor Cyan
-    $manifest = Join-Path $repoDir 'EdtWorktree.psd1'
+    $manifest = Join-Path $repoDir 'src\EdtWorktree\EdtWorktree.psd1'
     if (Test-Path -LiteralPath $manifest) {
         Import-Module $manifest -Force -DisableNameChecking
     } else {

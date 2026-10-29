@@ -3,7 +3,7 @@
     $script:TestCfg = Enter-EdtWtTestConfig
     $script:Root = $script:TestCfg.Root
     $script:CfgPath = $script:TestCfg.Path
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 }
 

@@ -4,18 +4,22 @@
     $script:TestCfg = Enter-EdtWtTestConfig
     $script:PrevNoAutorun = $env:EDT_INSTALL_NO_AUTORUN
     $script:PrevPath = $env:Path
-    $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    $script:RepoRoot = Get-EdtWtTestRepoRoot
     $root = $script:TestCfg.Root
 
     # Копия установщика вне клона: $PSScriptRoot без манифеста, значит источник - git clone.
     $script:StandaloneDir = Join-Path $root 'standalone'
     New-Item -ItemType Directory -Path $script:StandaloneDir -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $script:RepoRoot 'install.ps1') -Destination $script:StandaloneDir -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath (Join-Path $script:RepoRoot 'scripts\install.ps1') -Destination $script:StandaloneDir -ErrorAction SilentlyContinue
 
     # Локальный bare-клон текущего репозитория: сеть не нужна.
     $script:Bare = Join-Path $root 'origin.git'
     $out = & git clone --bare -q $script:RepoRoot $script:Bare 2>&1
     if ($LASTEXITCODE -ne 0) { throw "git clone --bare: $out" }
+
+    # Установщик клонирует ветку main; в тестовом bare-клоне она указывает на проверяемый коммит.
+    $headSha = (& git -C $script:RepoRoot rev-parse HEAD).Trim()
+    & git --git-dir $script:Bare update-ref refs/heads/main $headSha
 
     $env:EDT_INSTALL_NO_AUTORUN = '1'
     . (Join-Path $script:StandaloneDir 'install.ps1')
@@ -108,12 +112,12 @@ Describe 'Install-EdtWorktree' {
 
     It 'использует клон, из которого запущен установщик' {
         $dev = Join-Path $script:case 'dev'
-        New-Item -ItemType Directory -Path "$dev\bin" -Force | Out-Null
-        Set-Content -LiteralPath "$dev\EdtWorktree.psd1" -Value '@{}'
-        Copy-Item -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Destination $dev
+        New-Item -ItemType Directory -Path "$dev\src\EdtWorktree\bin", "$dev\scripts" -Force | Out-Null
+        Set-Content -LiteralPath "$dev\src\EdtWorktree\EdtWorktree.psd1" -Value '@{}'
+        Copy-Item -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Destination "$dev\scripts"
         $env:EDT_INSTALL_NO_AUTORUN = '1'
-        $out = pwsh -NoProfile -Command ". '$dev\install.ps1'; Install-EdtWorktree -InstallDir '$inst' -RepoUrl 'file:///nonexistent' -ModulesDir '$mods' -NoSetup -NoPath 6>`$null; (Get-Item '$mods\EdtWorktree').Target"
-        ($out | Select-Object -Last 1) | Should -Be $dev
+        $out = pwsh -NoProfile -Command ". '$dev\scripts\install.ps1'; Install-EdtWorktree -InstallDir '$inst' -RepoUrl 'file:///nonexistent' -ModulesDir '$mods' -NoSetup -NoPath 6>`$null; (Get-Item '$mods\EdtWorktree').Target"
+        ($out | Select-Object -Last 1) | Should -Be "$dev\src\EdtWorktree"
         Test-Path -LiteralPath $inst | Should -BeFalse
     }
 }
@@ -136,7 +140,7 @@ Describe 'Install-EdtWorktree: PATH при EDT_PATH_SCOPE=Process' {
         $script:case = Join-Path $script:TestCfg.Root ('case_' + [guid]::NewGuid().ToString('N'))
         $script:inst = Join-Path $script:case 'inst'
         $script:mods = Join-Path $script:case 'Modules'
-        $script:bin = Join-Path $script:inst 'bin'
+        $script:bin = Join-Path $script:inst 'src\EdtWorktree\bin'
     }
     AfterEach { $env:Path = $script:PrevPath }
 
@@ -158,20 +162,20 @@ Describe 'Install-EdtWorktree: PATH при EDT_PATH_SCOPE=Process' {
     }
 }
 
-Describe 'Install-EdtWorktree: запуск через ссылку модуля' {
+Describe 'Install-EdtWorktree: ссылка модуля уже указывает на клон' {
     It 'пересоздаёт ссылку и не удаляет собственный источник' {
         $case = Join-Path $script:TestCfg.Root ('case_' + [guid]::NewGuid().ToString('N'))
         $dev = Join-Path $case 'dev'
         $mods = Join-Path $case 'Modules'
-        New-Item -ItemType Directory -Path "$dev\bin" -Force | Out-Null
+        New-Item -ItemType Directory -Path "$dev\src\EdtWorktree\bin", "$dev\scripts" -Force | Out-Null
         New-Item -ItemType Directory -Path $mods -Force | Out-Null
-        Set-Content -LiteralPath "$dev\EdtWorktree.psd1" -Value '@{}'
-        Set-Content -LiteralPath "$dev\marker.txt" -Value 'x'
-        Copy-Item -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Destination $dev
-        New-Item -ItemType Junction -Path "$mods\EdtWorktree" -Target $dev | Out-Null
-        $out = pwsh -NoProfile -Command ". '$mods\EdtWorktree\install.ps1'; Install-EdtWorktree -InstallDir '$case\inst' -RepoUrl 'file:///nonexistent' -ModulesDir '$mods' -NoSetup -NoPath 6>`$null; (Get-Item '$mods\EdtWorktree').Target"
-        ($out | Select-Object -Last 1) | Should -Be $dev
-        Test-Path "$dev\marker.txt" | Should -BeTrue
+        Set-Content -LiteralPath "$dev\src\EdtWorktree\EdtWorktree.psd1" -Value '@{}'
+        Set-Content -LiteralPath "$dev\src\EdtWorktree\marker.txt" -Value 'x'
+        Copy-Item -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Destination "$dev\scripts"
+        New-Item -ItemType Junction -Path "$mods\EdtWorktree" -Target "$dev\src\EdtWorktree" | Out-Null
+        $out = pwsh -NoProfile -Command ". '$dev\scripts\install.ps1'; Install-EdtWorktree -InstallDir '$case\inst' -RepoUrl 'file:///nonexistent' -ModulesDir '$mods' -NoSetup -NoPath 6>`$null; (Get-Item '$mods\EdtWorktree').Target"
+        ($out | Select-Object -Last 1) | Should -Be "$dev\src\EdtWorktree"
+        Test-Path "$dev\src\EdtWorktree\marker.txt" | Should -BeTrue
         Test-Path "$mods\EdtWorktree\EdtWorktree.psd1" | Should -BeTrue
     }
 }
@@ -191,23 +195,23 @@ Describe 'Add-EdtWtInstallPathEntry' {
 Describe 'install.ps1 как файл' {
     It 'парсится в Windows PowerShell 5.1' {
         if (-not (Get-Command powershell.exe -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'нет powershell.exe'; return }
-        $file = Join-Path $script:RepoRoot 'install.ps1'
+        $file = Join-Path $script:RepoRoot 'scripts\install.ps1'
         powershell.exe -NoProfile -Command "`$e=`$null; [void][System.Management.Automation.Language.Parser]::ParseFile('$file',[ref]`$null,[ref]`$e); `$e.Count" | Should -Be '0'
     }
     It 'в Windows PowerShell 5.1 выводит сообщение про PowerShell 7 и ничего не делает' {
         if (-not (Get-Command powershell.exe -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'нет powershell.exe'; return }
-        $file = Join-Path $script:RepoRoot 'install.ps1'
+        $file = Join-Path $script:RepoRoot 'scripts\install.ps1'
         # Версия < 7: ветка выхода срабатывает до любых действий (в т.ч. при EDT_INSTALL_NO_AUTORUN, которого здесь нет).
         $text = (& powershell.exe -NoProfile -File $file 2>&1 | Out-String)
         $text | Should -Match 'winget install Microsoft.PowerShell'
     }
     It 'не импортирует модуль и указывает следующий шаг edt setup' {
-        $src = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'install.ps1') -Raw
+        $src = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'scripts\install.ps1') -Raw
         $src | Should -Not -Match 'Import-Module'
         $src | Should -Not -Match 'edt config init'
         $src | Should -Match 'edt setup'
     }
-    It 'старый scripts/install.ps1 удалён' {
-        Test-Path -LiteralPath (Join-Path $script:RepoRoot 'scripts') | Should -BeFalse
+    It 'установщик лежит в scripts/, а не в корне' {
+        Test-Path -LiteralPath (Join-Path $script:RepoRoot 'install.ps1') | Should -BeFalse
     }
 }

@@ -1,7 +1,8 @@
 ﻿BeforeAll {
-    $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+    $script:RepoRoot = Get-EdtWtTestRepoRoot
     $script:Readme = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'README.md') -Raw
-    $script:Commands = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'COMMANDS.md') -Raw
+    $script:Commands = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'docs\COMMANDS.md') -Raw
 }
 
 Describe 'Документация' {
@@ -14,7 +15,7 @@ Describe 'Документация' {
     }
 
     It 'README содержит команду установки' {
-        $script:Readme | Should -Match ([regex]::Escape('irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | iex'))
+        $script:Readme | Should -Match ([regex]::Escape('irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1 | iex'))
     }
 
     It 'README описывает ручную установку из ZIP с Unblock-File' {
@@ -42,7 +43,7 @@ Describe 'Документация' {
     It 'CI прогоняет проверки и установщик' {
         $wf = Get-Content -LiteralPath (Join-Path $script:RepoRoot '.github/workflows/checks.yml') -Raw
         $wf | Should -Match 'windows-latest'
-        $wf | Should -Match 'Invoke-EdtWtChecks\.ps1'
-        $wf | Should -Match 'install\.ps1'
+        $wf | Should -Match 'scripts/Invoke-EdtWtChecks\.ps1'
+        $wf | Should -Match 'scripts/install\.ps1'
     }
 }

@@ -4,7 +4,7 @@
     $script:Root = $script:TestCfg.Root
     $script:PrevMark = $env:EDTWT_TEST_MARK
     $env:EDTWT_TEST_MARK = Join-Path $script:Root 'mark.txt'
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 
     $script:Repos = Join-Path $script:Root 'repos'

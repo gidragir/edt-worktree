@@ -4,7 +4,7 @@
     $script:Root = $script:TestCfg.Root
     $script:PrevCapture = $env:EDTWT_TEST_CAPTURE
     $env:EDTWT_TEST_CAPTURE = Join-Path $script:Root 'captured.json'
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 
     # Корни с пробелом и кириллицей; клон стоит на эталонной ветке develop.

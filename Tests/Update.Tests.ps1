@@ -8,7 +8,7 @@ AfterAll {
 }
 
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
 }
 
 Describe 'Update-EdtWtBranch' {
@@ -92,7 +92,7 @@ Describe 'Update-EdtWtReference' {
         $script:Repo = $r.RepoPath
         $script:Other = Join-Path $script:Root 'p-other'
         git clone -q $r.RemotePath $script:Other
-        Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+        Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
         & (Get-Module EdtWorktree) {
             param($repos, $wss)
             $c = Get-EdtWtConfig

@@ -5,7 +5,7 @@
     $script:cfg = $script:TestCfg.Path
     $script:ReposRoot = Join-Path $script:Root 'repos'
     New-Item -ItemType Directory -Path $script:ReposRoot -Force | Out-Null
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 
     $r = New-EdtWtTestRepo -Root $script:ReposRoot -Name 'p' -Projects @{ 'src/cf' = 'Configuration'; 'src/cfe_a' = 'Extension'; 'src/cfe_b' = 'Extension' }

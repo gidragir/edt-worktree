@@ -8,7 +8,7 @@
 ## Установить
 Ставит модуль, добавляет edt в PATH и запускает мастер настройки
 ```snippet-template
-irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1 | iex
 ```
 
 ## Первичная настройка
@@ -272,5 +272,5 @@ Register-ScheduledTask -TaskName "EDT update" -Action (New-ScheduledTaskAction -
 ## Проверки модуля
 Прогоняет тесты Pester и статический анализ кода
 ```snippet-template
-pwsh -NoProfile -File Invoke-EdtWtChecks.ps1
+pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1
 ```

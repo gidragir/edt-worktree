@@ -1,7 +1,7 @@
 ﻿BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
     $script:TestCfg = Enter-EdtWtTestConfig
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
+    Import-Module (Get-EdtWtTestModulePath) -Force
 }
 
 AfterAll {

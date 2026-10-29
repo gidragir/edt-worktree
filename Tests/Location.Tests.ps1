@@ -8,7 +8,7 @@ AfterAll {
 }
 
 BeforeAll {
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force
+    Import-Module (Get-EdtWtTestModulePath) -Force
 
     # Файл .location Eclipse: 16 байт заголовка, writeUTF (2 байта длины + UTF-8),
     # затем неизменяемый хвост. Хвост в тестах проверяется побайтово: именно его

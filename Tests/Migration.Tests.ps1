@@ -4,7 +4,7 @@
     $script:Root = $script:TestCfg.Root
     $script:CfgPath = $script:TestCfg.Path
     $script:LegacyPath = $env:EDT_LEGACY_CONFIG_PATH
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 
     # Клон p с расширением cfe_a (cfe_gone отсутствует)

@@ -9,7 +9,7 @@
     New-Item -ItemType Directory -Path $script:ModulesDir -Force | Out-Null
     $env:EDT_MODULES_DIR = $script:ModulesDir
     $env:EDT_PATH_SCOPE = 'Process'
-    Import-Module (Join-Path $PSScriptRoot '..\EdtWorktree.psd1') -Force -DisableNameChecking
+    Import-Module (Get-EdtWtTestModulePath) -Force -DisableNameChecking
     $script:m = Get-Module EdtWorktree
 
     function script:New-FakeInstall {

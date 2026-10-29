@@ -117,17 +117,19 @@ function Install-EdtWorktree {
         throw 'git не найден. Установите: winget install Git.Git, затем повторите установку.'
     }
 
-    # 3. Источник: клон, из которого запущен файл, иначе InstallDir (clone / pull --ff-only).
+    # 3. Источник: клон, из которого запущен файл (scripts\ рядом с src\), иначе InstallDir (clone / pull --ff-only).
+    #    Ссылка модуля и bin указывают на <клон>\src\EdtWorktree.
     $source = $null
-    if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'EdtWorktree.psd1'))) {
-        $source = $PSScriptRoot
+    $devModule = if ($PSScriptRoot) { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\src\EdtWorktree')) } else { $null }
+    if ($devModule -and (Test-Path -LiteralPath (Join-Path $devModule 'EdtWorktree.psd1'))) {
+        $source = $devModule
         # Запуск через саму ссылку модуля: берём реальную цель, иначе замена ссылки удалит свой источник.
         $srcItem = Get-Item -LiteralPath $source -Force
         $srcTarget = $srcItem.ResolveLinkTarget($true)
         if ($srcTarget) { $source = $srcTarget.FullName }
         Write-Host "    Используется клон: $source"
     } else {
-        $source = $InstallDir
+        $source = Join-Path $InstallDir 'src\EdtWorktree'
         if (Test-Path -LiteralPath (Join-Path $InstallDir '.git')) {
             Write-Host "    Обновление клона: $InstallDir"
             $out = & git -C $InstallDir pull --ff-only -q 2>&1
