@@ -18,7 +18,11 @@
             Add-Member -InputObject $Base -MemberType NoteProperty -Name $prop.Name -Value $prop.Value
             continue
         }
-        if ($prop.Value -is [PSCustomObject] -and $existing.Value -is [PSCustomObject]) {
+        # "x" -is [PSCustomObject] истинно для строки, обёрнутой в PSObject (например, результат
+        # Join-Path), и тогда слияние лезет в её свойство Length: смотрим на базовый объект.
+        if ($null -ne $prop.Value -and $null -ne $existing.Value -and
+            $prop.Value.PSObject.BaseObject -is [System.Management.Automation.PSCustomObject] -and
+            $existing.Value.PSObject.BaseObject -is [System.Management.Automation.PSCustomObject]) {
             $existing.Value = Merge-EdtWtConfigObject -Base $existing.Value -Override $prop.Value
             continue
         }

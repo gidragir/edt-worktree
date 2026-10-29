@@ -80,6 +80,17 @@ Describe 'Конфигурация EdtWorktree v3' {
             $j.git.remote | Should -Be 'origin'
         }
 
+        It 'слияние не принимает строку, обёрнутую в PSObject, за объект (Join-Path в значениях)' {
+            $wrapped = Join-Path $script:Root 'a'
+            $wrapped -is [PSCustomObject] | Should -BeTrue   # условие воспроизведения на любой версии pwsh
+            $merged = & $m {
+                param($w)
+                $base = [PSCustomObject]@{ paths = [PSCustomObject]@{ repos_root = $w } }
+                $over = [PSCustomObject]@{ paths = [PSCustomObject]@{ repos_root = $w } }
+                Merge-EdtWtConfigObject -Base $base -Override $over
+            } $wrapped
+            [string]$merged.paths.repos_root | Should -Be ([string]$wrapped)
+        }
         It 'пишет UTF-8 без BOM и возвращает путь' {
             $saved = & $m { Save-EdtWtConfig -Config (New-EdtWtDefaultConfig) }
             $saved | Should -Be $script:CfgPath
