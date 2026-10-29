@@ -32,6 +32,7 @@
     }
 
     $summary = [PSCustomObject]@{
+        PSTypeName     = 'EdtWorktree.ConfigSummary'
         ConfigFile     = $file
         ReposRoot      = $cfg.paths.repos_root
         WorktreesRoot  = $cfg.paths.worktrees_root

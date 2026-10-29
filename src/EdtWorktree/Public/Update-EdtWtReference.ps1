@@ -47,6 +47,7 @@
 
     foreach ($name in $names) {
         $row = [PSCustomObject]@{
+            PSTypeName = 'EdtWorktree.ReferenceUpdate'
             Project = $name
             Status  = 'skipped'
             Detail  = ''

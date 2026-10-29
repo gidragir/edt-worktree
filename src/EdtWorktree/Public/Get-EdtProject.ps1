@@ -41,6 +41,7 @@
         }
         $reference = Join-Path (Join-Path $cfg.paths.workspaces_root $n) '_reference'
         [PSCustomObject]@{
+            PSTypeName  = 'EdtWorktree.Project'
             Name        = $n
             RefBranch   = [string](Get-EdtWtProperty $def 'ref_branch' '')
             CloneBranch = if ($branch) { $branch } else { '-' }

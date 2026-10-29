@@ -54,8 +54,10 @@
             $pidList = if ($matching.Count -gt 0) { ($matching | ForEach-Object { "$($_.Name):$($_.ProcessId)" }) -join ', ' } else { '' }
 
             $rows += [PSCustomObject]@{
+                PSTypeName = 'EdtWorktree.Worktree'
                 Project   = $pid_
                 Worktree  = $wsDir.Name
+                CodePath  = ''
                 Workspace = $wsPath
                 Locked    = if ($locked) { 'LOCK' } else { '' }
                 Processes = $pidList
@@ -83,16 +85,10 @@
         }
     }
 
-    foreach ($r in $rows) {
-        if ($null -eq $r.PSObject.Properties['CodePath']) {
-            $r | Add-Member -NotePropertyName CodePath -NotePropertyValue '' -Force
-        }
-    }
-
     if ($rows.Count -eq 0) {
         Write-Host "Рабочие области не найдены в $root" -ForegroundColor Yellow
         return
     }
 
-    return $rows | Select-Object Project, Worktree, CodePath, Workspace, Locked, Processes
+    return $rows
 }

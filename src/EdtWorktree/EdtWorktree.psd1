@@ -33,6 +33,8 @@
         'Test-EdtEnvironment'
     )
 
+    FormatsToProcess  = @('EdtWorktree.format.ps1xml')
+
     CmdletsToExport   = @()
     VariablesToExport = @()
 

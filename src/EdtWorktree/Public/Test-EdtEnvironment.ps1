@@ -18,7 +18,7 @@
     $rows = [System.Collections.Generic.List[PSCustomObject]]::new()
     $add = {
         param([string]$Check, [string]$Status, [string]$Detail = '', [string]$Fix = '')
-        $rows.Add([PSCustomObject]@{ Check = $Check; Status = $Status; Detail = $Detail; Fix = $Fix })
+        $rows.Add([PSCustomObject]@{ PSTypeName = 'EdtWorktree.DoctorCheck'; Check = $Check; Status = $Status; Detail = $Detail; Fix = $Fix })
     }
     $quote = { param([string]$p) if ($p -match '\s') { "`"$p`"" } else { $p } }
 
