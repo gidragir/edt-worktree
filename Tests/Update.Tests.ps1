@@ -164,3 +164,92 @@ Describe 'Update-EdtWtReference' {
         foreach ($k in 'Validate', 'MaxHeap') { $p | Should -Not -Contain $k }
     }
 }
+
+Describe 'Update-EdtSelf по виду установки' {
+    BeforeAll {
+        $script:PrevModulesDir = $env:EDT_MODULES_DIR
+        $script:PrevRelease = $env:EDT_RELEASE_URL
+        $script:ModulesDir = Join-Path $script:TestCfg.Root 'UpdModules'
+        New-Item -ItemType Directory -Path $script:ModulesDir -Force | Out-Null
+        $env:EDT_MODULES_DIR = $script:ModulesDir
+        $script:Link = Join-Path $script:ModulesDir 'EdtWorktree'
+    }
+    AfterAll {
+        $env:EDT_MODULES_DIR = $script:PrevModulesDir
+        $env:EDT_RELEASE_URL = $script:PrevRelease
+    }
+    BeforeEach {
+        Mock -ModuleName EdtWorktree -CommandName Import-Module -MockWith { }
+    }
+    AfterEach {
+        if (Test-Path -LiteralPath $script:Link) {
+            if ((Get-Item -LiteralPath $script:Link -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { ([System.IO.DirectoryInfo]$script:Link).Delete() }
+            else { Remove-Item -LiteralPath $script:Link -Recurse -Force }
+        }
+    }
+
+    It 'Gallery: вызывает Update-PSResource и перезагружает модуль' {
+        New-Item -ItemType Directory -Path $script:Link | Out-Null
+        Mock -ModuleName EdtWorktree -CommandName Get-EdtWtGalleryInstall -MockWith { $true }
+        Mock -ModuleName EdtWorktree -CommandName Update-PSResource -MockWith { }
+        Update-EdtSelf -Confirm:$false 6>$null
+        Should -Invoke Update-PSResource -ModuleName EdtWorktree -Times 1 -Exactly
+        Should -Invoke Import-Module -ModuleName EdtWorktree -Times 1 -Exactly
+    }
+
+    It 'Zip: скачивает install.ps1 из EDT_RELEASE_URL и запускает с -NoSetup' {
+        New-Item -ItemType Directory -Path $script:Link | Out-Null
+        $marker = Join-Path $script:TestCfg.Root 'zip-marker.txt'
+        $env:EDT_RELEASE_URL = 'https://example.invalid/rel/'
+        Mock -ModuleName EdtWorktree -CommandName Get-EdtWtGalleryInstall -MockWith { $false }
+        Mock -ModuleName EdtWorktree -CommandName Invoke-WebRequest -MockWith {
+            Set-Content -LiteralPath $OutFile -Value "param([switch]`$NoSetup) Set-Content -LiteralPath '$marker' -Value `"NoSetup=`$NoSetup`""
+        }
+        Update-EdtSelf -Confirm:$false 6>$null
+        Should -Invoke Invoke-WebRequest -ModuleName EdtWorktree -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://example.invalid/rel/install.ps1' }
+        (Get-Content -LiteralPath $marker -Raw).Trim() | Should -Be 'NoSetup=True'
+    }
+
+    It 'Dev: git pull --ff-only в клоне, импорт манифеста из src' {
+        $r = New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'updDev' -Branch 'develop' -WithRemote
+        $src = Join-Path $r.RepoPath 'src\EdtWorktree'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $src 'EdtWorktree.psd1') -Value '@{}'
+        git -C $r.RepoPath add -A | Out-Null
+        git -C $r.RepoPath -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q -m 'src' | Out-Null
+        git -C $r.RepoPath push -q origin develop
+        New-Item -ItemType Junction -Path $script:Link -Target $src | Out-Null
+        $other = Join-Path $script:TestCfg.Root 'updDev-other'
+        git clone -q $r.RemotePath $other
+        Set-Content -LiteralPath (Join-Path $other 'new.txt') -Value 'x'
+        git -C $other add -A | Out-Null
+        git -C $other -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q -m 'next' | Out-Null
+        git -C $other push -q origin develop
+        Update-EdtSelf -Confirm:$false 6>$null
+        Test-Path -LiteralPath (Join-Path $r.RepoPath 'new.txt') | Should -BeTrue
+        Should -Invoke Import-Module -ModuleName EdtWorktree -Times 1 -Exactly -ParameterFilter { $Name -like '*src\EdtWorktree\EdtWorktree.psd1' }
+    }
+
+    It 'Dev без git: понятная ошибка' {
+        $r = New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'updDevNoGit'
+        $src = Join-Path $r.RepoPath 'src\EdtWorktree'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        New-Item -ItemType Junction -Path $script:Link -Target $src | Out-Null
+        Mock -ModuleName EdtWorktree -CommandName Get-Command -ParameterFilter { $Name -eq 'git' } -MockWith { $null }
+        { Update-EdtSelf -Confirm:$false } | Should -Throw '*git не найден в PATH. Установите: winget install Git.Git*'
+    }
+
+    It 'Legacy: просит переустановить командой из релиза' {
+        $r = New-EdtWtTestRepo -Root $script:TestCfg.Root -Name 'updLegacy'
+        New-Item -ItemType Junction -Path $script:Link -Target $r.RepoPath | Out-Null
+        { Update-EdtSelf -Confirm:$false } | Should -Throw '*releases/latest/download/install.ps1*'
+    }
+
+    It '-WhatIf не выполняет обновление' {
+        New-Item -ItemType Directory -Path $script:Link | Out-Null
+        Mock -ModuleName EdtWorktree -CommandName Get-EdtWtGalleryInstall -MockWith { $true }
+        Mock -ModuleName EdtWorktree -CommandName Update-PSResource -MockWith { }
+        Update-EdtSelf -WhatIf 6>$null
+        Should -Invoke Update-PSResource -ModuleName EdtWorktree -Times 0 -Exactly
+    }
+}

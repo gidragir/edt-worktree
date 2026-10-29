@@ -13,5 +13,6 @@
 - Постоянный shim `edt` в `%LOCALAPPDATA%\EdtWorktree\bin` (`edt.cmd` и запускатель `edt.ps1`): не зависит от версии модуля, берёт наибольшую установленную; ставится командой `edt setup`, проверяется в `edt doctor`.
 - Табличные виды (`EdtWorktree.format.ps1xml`) для строк `status`, `update`, `project`, `config`, `doctor`: типы `EdtWorktree.Worktree`, `.DoctorCheck`, `.Project`, `.ConfigSummary`, `.ReferenceUpdate`.
 - Лицензия MIT (`LICENSE`).
+- `self-update` и `uninstall` определяют вид установки (Dev, Legacy, Gallery, Zip) и действуют по-своему: Update-PSResource, установщик из релиза, `git pull` в клоне разработчика; удаление модуля, shim и (с `-Purge`) чистого клона.
 - Настройки редактора для разработчиков (`.vscode/settings.json`, `.vscode/extensions.json`).
 - Сборка выпуска `scripts/build.ps1`: однофайловый `EdtWorktree.psm1`, `out/EdtWorktree.zip`, `out/install.ps1`, заметки выпуска из `CHANGELOG.md` (`-Release`).
