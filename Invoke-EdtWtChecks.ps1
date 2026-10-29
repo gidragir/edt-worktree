@@ -37,6 +37,10 @@ if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host '==> Pester' -ForegroundColor Cyan
+if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -ge [version]'5.0.0' })) {
+    Write-Host 'Нужен Pester 5: Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck' -ForegroundColor Red
+    exit 1
+}
 Import-Module Pester -MinimumVersion 5.0.0
 $cfg = New-PesterConfiguration
 $cfg.Run.Path = Join-Path $moduleRoot 'Tests'
@@ -55,12 +59,6 @@ if (-not $SkipAnalyzer) {
         Import-Module PSScriptAnalyzer
         $settings = Join-Path $moduleRoot 'PSScriptAnalyzerSettings.psd1'
         $issues = @(Invoke-ScriptAnalyzer -Path $moduleRoot -Recurse -Severity Error, Warning -Settings $settings)
-
-        # Профиль оболочки (если есть) проверяется теми же правилами.
-        $dotfilesProfile = Join-Path $HOME '.config\powershell\conf.d\08-edt-worktree.ps1'
-        if (Test-Path -LiteralPath $dotfilesProfile) {
-            $issues += @(Invoke-ScriptAnalyzer -Path $dotfilesProfile -Severity Error, Warning -Settings $settings)
-        }
 
         if ($issues.Count -eq 0) {
             Write-Host '    замечаний нет' -ForegroundColor Green

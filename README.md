@@ -1,131 +1,244 @@
 # EdtWorktree и команда `edt`
 
-Карта модуля для быстрой ориентации. Шаблоны вызовов: [COMMANDS.md](COMMANDS.md).
-Справка по операции: `Get-Help Invoke-EdtWorktreeOpen -Full`.
+Рабочие области 1C:EDT для git worktree: у каждой задачи своя ветка, свой
+каталог worktree и своя рабочая область EDT. Область клонируется из заранее
+прогретого эталона, поэтому EDT не строит индексы заново при каждой задаче.
 
-## Что это
+Шаблоны вызовов: [COMMANDS.md](COMMANDS.md). Справка в консоли: `edt help`,
+`Get-Help Invoke-EdtCommand -Full`.
 
-Управление рабочими областями (workspace) 1C:EDT для git worktree: одна область
-на задачу, клонируется из прогретого эталона, чтобы не строить индексы заново.
-Плюс запуск `vrunner` с областью текущего worktree (`edt vr`).
+## Требования
 
-## Точки входа
-
-| Способ | Файл | Когда |
-|---|---|---|
-| `edt ...` в pwsh | алиас на `Invoke-EdtCommand`, профиль импортирует модуль через `powershell/conf.d/08-edt-worktree.ps1` | интерактивно |
-| `pwsh -NoProfile -File ~/.config/bin/edt.ps1 ...` | [bin/edt.ps1](../../../bin/edt.ps1) | nushell, cmd, планировщик, CI. Коды возврата: 0 успех, 1 сбой, 2 ошибка вызова; для `vr` код vrunner отдаётся как есть |
-| `wt-*`, `edt-wt-*` | `Invoke-EdtWtLegacyCommand` | устаревшие имена, печатают замену |
-
-Алиас `edt` существует только в интерактивном `pwsh` с профилем. Агенты, nushell,
-bash и cmd его не видят: для них нужен `~/.config/bin/edt.cmd` (шим над `edt.ps1`)
-и каталог `~/.config/bin` в PATH. `.ps1` в PATHEXT нет, поэтому без шима `edt`
-по имени не запускается. Проверка: `where.exe edt`.
-
-## Подкоманды
-
-| Команда | Операция (Public/) | Суть |
-|---|---|---|
-| `open [проект задача] [расширения]` | `Invoke-EdtWorktreeOpen` | создаёт worktree (если нет), клонирует область из эталона, перепривязывает проекты, доимпортирует недостающее, переносит настройки IDE, запускает IDE |
-| `warmup [проект] [расширения]` | `Invoke-EdtWorktreeWarmup` | собирает эталон `_reference_preprod` |
-| `add [проект задача] <расширения>` | `Invoke-EdtWorktreeAdd` | доимпорт расширений; IDE закрывается и поднимается обратно |
-| `remove [проект] [задача]` | `Invoke-EdtWorktreeClean` | удаляет область и git worktree; эталон защищён |
-| `status [проект]` | `Get-EdtWorktreeList` | области, пути, `LOCK`, занявшие процессы; возвращает объекты |
-| `update [проекты]` | `Update-EdtWtReference` | fetch + ff-only pre-prod и пересборка эталонов; для расписания |
-| `config [get/set/init]` | `Get-EdtConfig` / `Set-EdtConfig` / `Initialize-EdtConfig` | просмотр, установка параметров или запуск визарда с автопоиском EDT |
-| `init [cf_project]` | `New-EdtProjectConfig` | создать файл проекта `.edt-worktree.json` в корне git-репозитория |
-| `self-update` | `Update-EdtSelf` | обновить модуль из исходного Git-репозитория |
-| `vr <аргументы vrunner>` | `Invoke-EdtWtVrunner` (Private) | vrunner с областью этого worktree, см. ниже |
-
-Общие ключи: `-WhatIf`, `-Yes` (= `-Confirm:$false`), `-MaxHeap 12g` (куча headless
-1cedtcli), у `open` ещё `-GuiMaxHeap`, `-NoGui`, `-Refresh`. Ключи пишутся как
-`-Refresh` или `--refresh`. Режимы расширений: `all` (по умолчанию), `none`,
-`changed` (затронутые веткой относительно pre-prod) или список имён.
-
-## Конфигурация (2 уровня)
-
-1. **Уровень машины (пользователя)**: `%APPDATA%\EdtWorktree\config.json` (управляется через `edt config` или `Initialize-EdtConfig`).
-   Хранит пути (`projects_root`, `worktree_root`, `workspaces_root`), путь к `1cedtcli`, JVM-лимиты и донора настроек.
-   *(Для обратной совместимости сохраняется fallback на `~/.config/1c/projects.json`).*
-2. **Уровень проекта**: файл `.edt-worktree.json` в корне Git-репозитория проекта 1С (создаётся через `edt init`).
-   Хранит метаданные проекта: `cf_project`, `reference_branch`, `v8version`, `active_extensions`, `ibconnection`.
-   Когда файл есть в репозитории, проект не требует ручной регистрации на машине разработчика.
+- Windows 10/11, права администратора не нужны.
+- PowerShell 7+ (`winget install Microsoft.PowerShell`).
+- git в PATH (`winget install Git.Git`).
+- 1C:EDT (`1cedtcli.exe` и `1cedt.exe`).
+- JDK 17+ с JavaFX для запуска IDE: полная сборка (Azul Zulu FX, Axiom JDK Full,
+  Liberica Full). Обычный OpenJDK/Temurin не подходит: EDT пишет «Поддержка
+  JavaFX не установлена».
+- Для `edt vr`: OneScript и vrunner.
 
 ## Установка
 
 В PowerShell 7:
+
 ```powershell
 irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1 | iex
 ```
-Установщик клонирует репозиторий в `%LOCALAPPDATA%\EdtWorktree`, создаёт ссылку модуля в `Documents\PowerShell\Modules\EdtWorktree`, добавляет `bin` в `PATH` пользователя и показывает проверки окружения (pwsh, git, 1C:EDT, JDK 17 с JavaFX). Затем выполните `edt setup`. Повторный запуск обновляет установку. Из клона: `pwsh -NoProfile -File install.ps1`.
 
-## Раскладка на диске
+Установщик:
 
-- Область worktree: `<worktree.root_dir>\<проект>\<ветка с дефисом>`, по умолчанию
-  `D:\workspaces\worktree\my-project\feature-TASK-123` (`/` в имени ветки
-  заменяется на `-`, `ConvertTo-EdtWtSafeName`).
-- Эталон: `<root_dir>\<проект>\_reference_preprod` (клонируется robocopy).
-- Git worktree: `D:\projects\worktree\<проект>\<задача>`, основной репозиторий
-  `D:\projects\<проект>` (константа `EdtWtWorktreeRoot` в `_Variables.ps1`).
-  Не путать с `root_dir` для областей: это разные каталоги.
-- Эталонная ветка: `worktree.reference_branch` (pre-prod).
-- Блокировка области: `.metadata\.lock`, её держит работающая IDE.
+1. клонирует репозиторий в `%LOCALAPPDATA%\EdtWorktree`;
+2. создаёт ссылку модуля `Documents\PowerShell\Modules\EdtWorktree`;
+3. добавляет каталог `bin` в PATH пользователя (команда `edt` работает в pwsh,
+   cmd, bash и nushell через `bin\edt.cmd`);
+4. показывает проверки окружения: pwsh, git, 1C:EDT, JDK 17 с JavaFX;
+5. в интерактивном сеансе без конфига запускает `edt setup`.
 
-## `edt vr`: vrunner + область EDT
+Повторный запуск обновляет установку и не дублирует запись в PATH.
 
-`autumn-properties.json` лежит в корне репозитория (локальный, в git не попадает,
-содержит пароль базы) и даёт vrunner настройки базы. Файл не меняется.
+С параметрами (без автозапуска `edt setup`, другой каталог или ветка):
 
-Обёртка запускает `vrunner` в корне worktree и выставляет на время вызова:
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/install.ps1))) -NoSetup -InstallDir D:\tools\EdtWorktree
+```
 
-| Переменная | Значение |
+Ключи: `-InstallDir`, `-Branch`, `-NoSetup`, `-NoPath` (не менять PATH).
+
+Под `irm | iex` то же задаётся переменными окружения `EDT_INSTALL_DIR`,
+`EDT_INSTALL_BRANCH`, `EDT_INSTALL_NOSETUP=1`.
+
+Из своего клона (режим разработчика): `pwsh -NoProfile -File install.ps1`.
+Ссылка модуля будет указывать на этот клон.
+
+Ручная установка из ZIP: распакуйте архив, снимите пометку «скачано из
+интернета», иначе PowerShell откажется загружать скрипты, и запустите установщик:
+
+```powershell
+Get-ChildItem -Recurse D:\tools\edt-worktree | Unblock-File
+pwsh -NoProfile -File D:\tools\edt-worktree\install.ps1
+```
+
+Без git `edt self-update` в такой установке не работает.
+
+## Первые шаги
+
+```powershell
+edt setup                       # каталоги клонов, worktree и рабочих областей; поиск EDT
+edt project add my-project      # конфигурация и рабочие расширения - номерами из списка
+edt warmup my-project           # эталон с индексами и валидацией
+edt open my-project TASK-123    # worktree feature/TASK-123, рабочая область, IDE
+```
+
+- `edt setup` спрашивает три каталога: `repos_root` (клоны проектов, каждый на
+  своей эталонной ветке), `worktrees_root` (git worktree задач) и
+  `workspaces_root` (рабочие области EDT и эталоны). Без диалога:
+  `edt setup -ReposRoot D:\projects -WorktreesRoot D:\projects\worktree -WorkspacesRoot D:\workspaces`.
+- Имя проекта - имя папки клона в `repos_root`. `edt project add` без имени
+  предлагает зарегистрировать все новые клоны.
+- Эталонная ветка проекта (`ref_branch`) берётся из текущей ветки клона при
+  регистрации. Клон должен стоять на ней, когда собирается эталон.
+- Повторно `edt open` можно вызывать без аргументов из каталога worktree.
+
+В репозиториях проектов модуль ничего не создаёт: вся настройка хранится на
+машине пользователя.
+
+## Команды
+
+| Команда | Что делает |
 |---|---|
-| `VRUNNER_EDT_WORKSPACE` | область текущего worktree |
-| `VRUNNER_EDT_PATH` | `1cedtcli` из `projects.json` |
-| `VRUNNER_EDT_VMARGS` | только `-Xmx<N>g` (как vrunner разбирает несколько аргументов в переменной, не проверено) |
-| `VRUNNER_EDT_TIMEOUT` | `timeouts.export_batch_sec` |
+| `edt setup` | Мастер: три каталога, найденный EDT, регистрация клонов. Ключи `-ReposRoot`, `-WorktreesRoot`, `-WorkspacesRoot`, `-NoProjects` |
+| `edt project list` | Проекты: эталонная ветка, текущая ветка клона, рабочие/найденные расширения, есть ли эталон |
+| `edt project add [имя]` | Зарегистрировать клон. Без диалога: `-Extensions all\|none\|<имена>`, `-RefBranch`, `-CfProject` |
+| `edt project ext <проект> [+имя] [-имя]` | Рабочие расширения: без правок - список с отметками, с правками - без диалога |
+| `edt project set <проект> -RefBranch <ветка> \| -CfProject <путь>` | Редкие правки проекта |
+| `edt project remove <проект>` | Убрать проект из конфига; файлы не трогаются |
+| `edt warmup [проект]` | Собрать эталон из клона: конфигурация + рабочие расширения, затем `validate` |
+| `edt open [проект ветка]` | Worktree (создаётся при необходимости), рабочая область из эталона, IDE. Ключи `-NoGui`, `-Refresh` |
+| `edt add <расширения>` | Подключить расширения к области текущего worktree; IDE перезапускается |
+| `edt remove [проект] [ветка]` | Удалить рабочую область и git worktree (с подтверждением) |
+| `edt status [проект]` | Области, блокировки и занявшие их процессы |
+| `edt update [проекты]` | Подтянуть `ref_branch` в клонах и пересобрать эталоны; для расписания. Ключ `-SkipGit` |
+| `edt vr <аргументы vrunner>` | vrunner с рабочей областью текущего worktree |
+| `edt doctor` | Проверка окружения и проектов; у каждой проблемы - команда исправления |
+| `edt config [show\|path\|set <ключ> <значение>]` | Показать настройки, путь к файлу, изменить ключ |
+| `edt self-update` | Обновить модуль (`git pull --ff-only` в каталоге установки) |
+| `edt uninstall [-Purge]` | Удалить модуль |
 
-Уже заданные пользователем `VRUNNER_EDT_*` не перезаписываются. Без
-`autumn-properties.json` или без созданной области выдаётся ошибка (код 2),
-область создаётся `edt open -NoGui`.
+Ключи пишутся как `-NoGui` или `--no-gui`. Изменяющие команды понимают `-WhatIf`
+(`--dry-run`) и `-Yes` (без вопросов). Коды возврата `bin\edt.ps1`: 0 успех,
+1 сбой (у `doctor` - найдена ошибка), 2 ошибка вызова; для `vr` код vrunner
+отдаётся как есть.
 
-Для `cf load` и `cfe load` автоматически добавляется `--increment`; `-Full`
-отключает (нужно для первой загрузки в пустую базу). Ключ `-Full` в vrunner не уходит.
-Логика в `Resolve-EdtWtVrunnerPlan` (чистая, покрыта тестами), запуск в `Invoke-EdtWtVrunner`.
+### Ветки и каталоги
 
-Не сделано: выбор файлов по `git diff` через `--list`, блокировка общей базы,
-краткая сводка результата тестов.
+- `edt open my-project TASK-123` работает с веткой `feature/TASK-123`: имя без `/`
+  получает префикс `git.branch_prefix`. Полное имя (`bugfix/x`) берётся как есть.
+- Если worktree ветки уже есть - используется он. Иначе: локальная ветка, затем
+  ветка на `git.remote` (с отслеживанием), иначе новая ветка от
+  `<remote>/<ref_branch>`.
+- Worktree: `<worktrees_root>\<проект>\<ветка, / заменён на ->`.
+- Рабочая область: `<workspaces_root>\<проект>\<ветка, / заменён на ->`.
+- Эталон: `<workspaces_root>\<проект>\_reference`. Старый `_reference_preprod`
+  переименовывается при первом `warmup`.
 
-## Карта файлов
+### `edt vr`
 
-- `EdtWorktree.psm1`: загрузка (сначала `Private/_Variables.ps1`, затем Private, Public, Completers), алиас `edt`, старые имена.
-- `EdtWorktree.psd1`: список экспортируемых функций; новую публичную функцию нужно добавить и сюда, и в `Tests/Contract.Tests.ps1`.
-- `Public/`: операции (по файлу на функцию). `Invoke-EdtCommand` только разбирает аргументы и диспетчеризует.
-- `Private/`, самое нужное:
-  - `Resolve-EdtWtTarget`: разбор `[проект задача]`, `Invoke-EdtWtInLocation`;
-  - `Resolve-EdtWtWrapperArgs`: разбор ключей (для `vr` не используется);
-  - `Initialize-EdtWtWorkspace`: клонирование эталона, `-Refresh`;
-  - `Repair-EdtWtWorkspaceLocations`, `Set/Get-EdtWtLocationUri`: перепривязка проектов на текущий worktree;
-  - `Get-EdtWtImportTargets`, `New-EdtWtBatch`, `Invoke-EdtWtCli`: пакет команд и запуск `1cedtcli` (headless);
-  - `Resolve-EdtWtExtensionList`: режимы `all/none/changed`;
-  - `Resolve-EdtWtJvmArgs` (headless), `Resolve-EdtWtGuiVmArgs`, `Start-EdtWtGui` (IDE);
-  - `Stop-EdtWtProcesses`, `Get-EdtWtWorkspaceProcesses`: процессы, занявшие область;
-  - `Update-EdtWtBranch`, `Test-EdtWtWorkspaceFreshness`: обновление эталона и проверка свежести клона;
-  - `Copy-EdtWtPreferences`, `Get-EdtWtPrefsSource`: перенос настроек IDE.
-- `Completers/`: автодополнение `edt`.
-- `Tests/`: Pester 5; запуск и анализатор: `pwsh -NoProfile -File Invoke-EdtWtChecks.ps1`.
+Вызывается из каталога worktree. Настройки базы vrunner берёт из
+`autumn-properties.json` в корне worktree (файл не меняется). Обёртка на время
+вызова выставляет `VRUNNER_EDT_WORKSPACE`, `VRUNNER_EDT_PATH`,
+`VRUNNER_EDT_VMARGS`, `VRUNNER_EDT_TIMEOUT`; уже заданные вами `VRUNNER_EDT_*` не
+перезаписываются. `cf load` и `cfe load` идут с `--increment`; ключ `-Full`
+отключает это и в vrunner не передаётся. Нужна рабочая область: если её нет,
+выполните `edt open -NoGui`.
 
-## Правила при доработке
+## Конфиг
 
-- Логику в профиль оболочки не класть: она должна работать из `pwsh -NoProfile`.
-- Новые `.ps1` с кириллицей сохранять в UTF-8 с BOM (иначе PSScriptAnalyzer падает).
-- **JVM и JavaFX**: 1C:EDT требует Java 17 с JavaFX (Azul Zulu FX). Пути с пробелами в аргументах `Start-Process` (`-vm "$jvmDll"`) экранировать кавычками: `"`"$jvmDll`""`.
-- Изменяющие команды поддерживают `-WhatIf`; удаление необратимо, подтверждение по умолчанию.
-- Подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в `bin/edt.ps1`,
-  оба списка в `Completers`, `Show-EdtWtUsage`, `COMMANDS.md`, тест контракта.
+Один файл: `%APPDATA%\EdtWorktree\config.json` (путь: `edt config path`,
+переопределяется переменной `EDT_CONFIG_PATH`). Править JSON руками не нужно:
+пути задаёт `edt setup`, проекты - `edt project ...`, остальное -
+`edt config set`.
 
-## Смежное
+```json
+{
+  "version": 3,
+  "paths": {
+    "repos_root": "D:\\projects\\default",
+    "worktrees_root": "D:\\projects\\worktree",
+    "workspaces_root": "D:\\workspaces\\worktree"
+  },
+  "edt": {
+    "cli_path": null,
+    "vm_path": null,
+    "prefs_source": null,
+    "max_heap": null,
+    "gui_max_heap": null,
+    "extra_vmargs": "",
+    "timeout_sec": 7200
+  },
+  "git": { "remote": "origin", "branch_prefix": "feature/" },
+  "projects": {
+    "my-project": {
+      "ref_branch": "develop",
+      "cf_project": "src/cf",
+      "extensions": ["src/cfe", "src/cfe_ad"]
+    }
+  }
+}
+```
 
-- `1c/projects.json` читают также `nushell/custom/1c.nu` и `powershell/conf.d/07-1c.ps1` (`update-ib`: своя инкрементальная загрузка через `--ibcmd`).
-- Справочники в `temp/`: `vrunner_usage_guide.md`, `1c_edt_cli_usage_guide.md`, `1c_standalone_server_ibsrv_ibcmd.md`.
-- vrunner MCP подключён через `.mcp.json` (`vrunner-mcp`).
+- `null` - определять автоматически при каждом запуске: `cli_path` - самый новый
+  найденный 1C:EDT, `max_heap`/`gui_max_heap` - по свободной памяти, `vm_path` -
+  см. «Решение проблем».
+- `extensions` - рабочие расширения: только они попадают в эталон.
+- `edt.prefs_source` - рабочая область, из которой копируются настройки IDE.
+- Примеры: `edt config set edt.max_heap 16g`, `edt config set git.remote upstream`,
+  `edt config set edt.cli_path null` (вернуть автопоиск).
+- Ключи, которых модуль не знает, при сохранении не теряются.
+
+Конфиг 2.x (`%APPDATA%\EdtWorktree\config.json` без `version: 3` и
+`~/.config/1c/projects.json`) переносится автоматически при первом запуске.
+Прежний файл остаётся рядом как `config.json.v2.bak`, `projects.json` не
+меняется.
+
+## Обновление и удаление
+
+- `edt self-update` - обновить модуль из его git-репозитория. Повторный запуск
+  строки установки делает то же.
+- `edt uninstall` - удалить ссылку модуля и `bin` из PATH пользователя. Конфиг,
+  клоны, worktree и рабочие области остаются.
+- `edt uninstall -Purge` - ещё и каталог установки и конфиг. Каталог установки с
+  незакоммиченными правками не удаляется (будет предупреждение).
+
+## Решение проблем
+
+Первым делом: `edt doctor`. Каждая найденная проблема выводится с командой
+исправления.
+
+- **«Поддержка JavaFX не установлена» / IDE не стартует.** JVM для IDE
+  выбирается так: `edt.vm_path` из конфига; если в `1cedt.ini` уже есть `-vm` -
+  он; `JAVA_HOME`, если это JDK 17+ с JavaFX; JDK с JavaFX в `Program Files`
+  (Zulu, BellSoft, Axiom, Java); иначе запуск без `-vm` с предупреждением.
+  `edt doctor` показывает выбранную JVM и причину. Явно:
+  `edt config set edt.vm_path "C:\Program Files\Zulu\zulu-17\bin\server\jvm.dll"`.
+- **«Эталон занят».** Эталон открыт в EDT. Закройте эту IDE и повторите
+  `edt warmup`; модуль чужие процессы не закрывает.
+- **«Клон стоит на '<x>', эталон собирается с '<ref>'».** Переключите клон
+  командой из сообщения (`git -C <клон> switch <ref>`) или поменяйте эталонную
+  ветку: `edt project set <проект> -RefBranch <ветка>`.
+- **«Проект не зарегистрирован».** `edt project add <имя>`.
+- **«Конфиг повреждён».** Исправьте JSON по сообщению или удалите файл и
+  выполните `edt setup`.
+- **EDT не найден.** `edt config set edt.cli_path <путь к 1cedtcli.exe>`.
+
+## Для разработчиков модуля
+
+- Проверки перед коммитом: `pwsh -NoProfile -File Invoke-EdtWtChecks.ps1`
+  (Pester 5 и PSScriptAnalyzer). Нужен Pester 5:
+  `Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck`.
+- Тесты не трогают реальный конфиг, PATH и `Documents\PowerShell\Modules`:
+  `EDT_CONFIG_PATH`, `EDT_MODULES_DIR`, `EDT_PATH_SCOPE=Process` направляют их во
+  временный каталог (см. `Tests/TestHelpers.ps1`).
+- Правила для кода (кодировка UTF-8 с BOM, git только через `Invoke-EdtWtGit`,
+  кавычки в `Start-Process`, формат `.location`) - в [AGENTS.md](AGENTS.md).
+- Новая подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в
+  `bin/edt.ps1`, `Completers`, `Show-EdtWtUsage`, README, COMMANDS.md и
+  `Tests/Contract.Tests.ps1`. Новая публичная функция - ещё и в
+  `FunctionsToExport` в `EdtWorktree.psd1`.
+
+### Карта файлов
+
+- `install.ps1` - установщик (самодостаточный, работает под `irm | iex`).
+- `EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
+- `bin/edt.ps1`, `bin/edt.cmd` - вход для любых оболочек и планировщика.
+- `Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),
+  `ProjectCommands`, `ConfigCommands` (setup, config), `DoctorCommand`,
+  `LifecycleCommands` (update, self-update, uninstall), `Invoke-EdtCommand`
+  (диспетчер подкоманд).
+- `Private/` - `Configuration` и `ConfigMigration` (конфиг v3 и перенос с 2.x),
+  `ProjectDiscovery` (проекты в клоне, проект по пути), `GitWorktree` (ветки,
+  worktree, сборка эталона), `EdtProcess` (поиск EDT, JVM, запуск GUI и
+  `1cedtcli`, процессы), `EclipseLocation` (`.location`), `Workspace` (рабочие
+  области, настройки IDE, справка), `Interaction` (диалоги).
+- `Completers/` - автодополнение `edt`.
+- `Tests/` - Pester 5.

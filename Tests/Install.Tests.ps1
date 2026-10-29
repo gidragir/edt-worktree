@@ -74,6 +74,27 @@ Describe 'Install-EdtWorktree' {
         $env:Path | Should -BeExactly $before
     }
 
+    It 'форма scriptblock передаёт ключи в Install-EdtWorktree' {
+        # Если ключи потеряются, установка уйдёт во временные каталоги из переменных, а не в реальные.
+        $names = 'EDT_INSTALL_NO_AUTORUN', 'EDT_INSTALL_DIR', 'EDT_INSTALL_NOSETUP', 'EDT_MODULES_DIR', 'EDT_PATH_SCOPE'
+        $prev = @{}
+        foreach ($n in $names) { $prev[$n] = [Environment]::GetEnvironmentVariable($n) }
+        $env:EDT_INSTALL_NO_AUTORUN = $null
+        $env:EDT_INSTALL_DIR = Join-Path $script:case 'env-inst'
+        $env:EDT_INSTALL_NOSETUP = '1'
+        $env:EDT_MODULES_DIR = Join-Path $script:case 'env-mods'
+        $env:EDT_PATH_SCOPE = 'Process'
+        try {
+            $text = Get-Content -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Raw
+            & ([scriptblock]::Create($text)) -NoSetup -NoPath -InstallDir $inst -RepoUrl $script:Bare -ModulesDir $mods 6>$null
+        } finally {
+            foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $prev[$n]) }
+            $env:Path = $script:PrevPath
+        }
+        (Get-Item "$mods\EdtWorktree").LinkType | Should -Be 'Junction'
+        Test-Path -LiteralPath (Join-Path $inst '.git') | Should -BeTrue
+    }
+
     It 'использует клон, из которого запущен установщик' {
         $dev = Join-Path $script:case 'dev'
         New-Item -ItemType Directory -Path "$dev\bin" -Force | Out-Null

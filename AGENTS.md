@@ -6,7 +6,7 @@
 
 - **JavaFX обязателен**: 1C:EDT требует Java 17 с поддержкой JavaFX (модули `javafx.*`, библиотека `javafx-swt.jar`). Стандартные сборки OpenJDK (Temurin, headless-дистрибутивы) вызывают ошибку *"Поддержка JavaFX не установлена"*. Допустимы только полные сборки (Azul Zulu FX, Axiom JDK Full, Liberica Full).
 - **Конфликт реестра Windows**: Eclipse Equinox Launcher опрашивает реестр Windows (`HKLM\SOFTWARE\JavaSoft\Java Runtime Environment`) раньше переменной `PATH`. Если на машине установлена Java 8, лончер падает с *"Incompatible JVM: Version 1.8.0"*.
-- **Явный проброс `-vm`**: Функция `Start-EdtWtGui` обязана явно вычислять путь к `jvm.dll` (из `$env:JAVA_HOME` или стандартного `C:\Program Files\Zulu\zulu-17`) и передавать параметр `-vm` перед `-data`. Это делает запуск автономным и независимым от прав администратора на редактирование `1cedt.ini` или глобального реестра Windows.
+- **Выбор JVM для GUI — только через `Resolve-EdtWtGuiJvm`**, порядок: (1) `edt.vm_path` из конфига; (2) если в `1cedt.ini` рядом с `1cedt.exe` уже есть `-vm` — `-vm` не передаётся (ini установщика EDT главнее); (3) `JAVA_HOME`, только если это JDK 17+ с JavaFX (`Test-EdtWtJdkHasJavaFx`); (4) JDK с JavaFX в `Program Files` (Zulu, BellSoft, Axiom, Java); (5) ничего — запуск без `-vm` и предупреждение со ссылкой на `edt doctor`. Если `-vm` передаётся, то перед `-data`. Все запуски GUI (включая перезапуск после `edt add`) идут через `Start-EdtWtGui`; прямой `Start-Process` IDE запрещён.
 
 ## 2. Экранирование аргументов в PowerShell (Start-Process)
 
@@ -32,3 +32,11 @@
 - **Преобразование URI**:
   - При записи: всегда экранировать пробелы как `%20` через `ConvertTo-EdtWtEclipseLocationUri` (`URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/...`), сохраняя символы Unicode/кириллицы.
   - При чтении: всегда разэкранировать строку перед сравнением с путями на диске через `ConvertFrom-EdtWtEclipseLocationUri` (`[System.Uri]::UnescapeDataString`).
+
+## 5. Конфиг пользователя `config.json`
+
+- Один файл: `%APPDATA%\EdtWorktree\config.json` (схема v3, `version: 3`), путь — `Get-EdtWtUserConfigPath`, переопределяется `EDT_CONFIG_PATH`. Конфига в репозиториях проектов нет.
+- Пишется только через `Save-EdtWtConfig`: UTF-8 **без** BOM, временный файл + `Move-Item`, схема целиком; ключи, которых модуль не знает, сохраняются.
+- Битый JSON — ошибка «Конфиг повреждён», файл не перезаписывается.
+- Конфиг 2.x мигрирует при первом чтении (`Invoke-EdtWtConfigMigration`), оригинал — `config.json.v2.bak`, `~/.config/1c/projects.json` не трогается. Автодополнение читает конфиг только без миграции и записи.
+- Тесты и любой запуск модуля вне Pester при разработке — только с `EDT_CONFIG_PATH` во временном каталоге; PATH и `Modules` в тестах — через `EDT_PATH_SCOPE=Process` и `EDT_MODULES_DIR`.

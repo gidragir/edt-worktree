@@ -1,0 +1,28 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pester 5 и PSScriptAnalyzer
+        run: |
+          Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Тесты и анализатор
+        run: pwsh -NoProfile -File Invoke-EdtWtChecks.ps1
+
+      - name: Установщик в чистом профиле
+        run: |
+          $env:EDT_INSTALL_NOSETUP = '1'
+          ./install.ps1
+          edt help

@@ -10,8 +10,8 @@
     пользователя и показывает проверки окружения. Повторный запуск обновляет установку.
 
     Под iex нет $PSScriptRoot и param(): параметры задаются переменными окружения
-    EDT_INSTALL_DIR, EDT_INSTALL_BRANCH, EDT_INSTALL_NOSETUP либо вызовом
-    & ([scriptblock]::Create((irm <url>))) и затем Install-EdtWorktree с ключами.
+    EDT_INSTALL_DIR, EDT_INSTALL_BRANCH, EDT_INSTALL_NOSETUP либо ключами
+    Install-EdtWorktree в вызове & ([scriptblock]::Create((irm <url>))) -NoSetup.
     Файл самодостаточен: модуль не импортируется, git вызывается напрямую.
 #>
 
@@ -93,7 +93,7 @@ function Install-EdtWorktree {
     .PARAMETER RepoUrl
         Адрес репозитория.
     .PARAMETER ModulesDir
-        Каталог пользовательских модулей (по умолчанию Documents\PowerShell\Modules).
+        Каталог пользовательских модулей (по умолчанию $env:EDT_MODULES_DIR, иначе Documents\PowerShell\Modules).
     .PARAMETER NoSetup
         Не запускать edt setup, только напечатать следующий шаг.
     .PARAMETER NoPath
@@ -104,7 +104,7 @@ function Install-EdtWorktree {
         [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'EdtWorktree'),
         [string]$Branch = 'main',
         [string]$RepoUrl = 'https://github.com/gidragir/edt-worktree.git',
-        [string]$ModulesDir = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'),
+        [string]$ModulesDir = $(if ($env:EDT_MODULES_DIR) { $env:EDT_MODULES_DIR } else { Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules' }),
         [switch]$NoSetup,
         [switch]$NoPath
     )
@@ -223,4 +223,5 @@ $edtInstallArgs = @{}
 if ($env:EDT_INSTALL_DIR) { $edtInstallArgs['InstallDir'] = $env:EDT_INSTALL_DIR }
 if ($env:EDT_INSTALL_BRANCH) { $edtInstallArgs['Branch'] = $env:EDT_INSTALL_BRANCH }
 if ($env:EDT_INSTALL_NOSETUP) { $edtInstallArgs['NoSetup'] = $true }
-Install-EdtWorktree @edtInstallArgs
+# & ([scriptblock]::Create((irm <url>))) -NoSetup: ключи вызова приходят в $args и заменяют переменные окружения.
+if ($args.Count -gt 0) { Install-EdtWorktree @args } else { Install-EdtWorktree @edtInstallArgs }
