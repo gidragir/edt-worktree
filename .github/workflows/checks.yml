@@ -15,7 +15,7 @@ jobs:
 
       - name: Pester 5 и PSScriptAnalyzer
         run: |
-          Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module Pester -MinimumVersion 5.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 
       - name: Тесты и анализатор над src
