@@ -53,7 +53,11 @@ $cfg.Run.Path = Join-Path $repoRoot 'Tests'
 $cfg.Run.PassThru = $true
 $cfg.Output.Verbosity = 'Normal'
 $prevTestModule = $env:EDT_TEST_MODULE
-if ($ModulePath) { $env:EDT_TEST_MODULE = (Resolve-Path -LiteralPath $ModulePath).Path }
+if ($ModulePath) {
+    $env:EDT_TEST_MODULE = (Resolve-Path -LiteralPath $ModulePath).Path
+    # Build.Tests собирает модуль из src: над готовым выпуском он не нужен и ушёл бы в рекурсию.
+    $cfg.Run.ExcludePath = @(Join-Path $repoRoot 'Tests\Build.Tests.ps1')
+}
 try {
     $result = Invoke-Pester -Configuration $cfg
 } finally {

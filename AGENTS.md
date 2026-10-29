@@ -25,6 +25,7 @@
 - После любой правки таких файлов проверять, что BOM сохранился. При потере — перезаписать через `[IO.File]::WriteAllText($p, $t, [Text.UTF8Encoding]::new($true))`, запуская из файла-скрипта, а не через `pwsh -Command "..."` (там теряются `$переменные`).
 - **Вызовы Git строго через `Invoke-EdtWtGit`**: Прямой вызов `git` в модуле запрещён. Все взаимодействия с Git обязаны выполняться через внутреннюю функцию `Invoke-EdtWtGit`. Она изолированно устанавливает `[Console]::OutputEncoding = UTF-8`, передаёт флаг `-c core.quotepath=false` и восстанавливает прежнюю кодировку в `finally`. Иначе кириллические пути и ветки декодируются как cp866 (`╨Ш╨╜╤В...`) и ломают поиск каталогов на диске.
 - Перед завершением любых правок всегда выполнять проверку: `pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1`.
+- Сборка выпуска: `pwsh -NoProfile -File scripts/build.ps1` (склейка в один `psm1`, `out/EdtWorktree.zip`, `out/install.ps1`); перед выпуском — проверки над `out/` с `-ModulePath`: `pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1 -ModulePath out/EdtWorktree/<версия>/EdtWorktree.psd1`.
 
 ## 4. Eclipse Workspace `.location` и привязка проектов
 

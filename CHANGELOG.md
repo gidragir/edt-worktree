@@ -13,3 +13,4 @@
 - Табличные виды (`EdtWorktree.format.ps1xml`) для строк `status`, `update`, `project`, `config`, `doctor`: типы `EdtWorktree.Worktree`, `.DoctorCheck`, `.Project`, `.ConfigSummary`, `.ReferenceUpdate`.
 - Лицензия MIT (`LICENSE`).
 - Настройки редактора для разработчиков (`.vscode/settings.json`, `.vscode/extensions.json`).
+- Сборка выпуска `scripts/build.ps1`: однофайловый `EdtWorktree.psm1`, `out/EdtWorktree.zip`, `out/install.ps1`, заметки выпуска из `CHANGELOG.md` (`-Release`).

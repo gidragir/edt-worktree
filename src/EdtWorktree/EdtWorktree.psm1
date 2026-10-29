@@ -36,6 +36,7 @@ $script:EdtWtPortablePrefs = @(
 # Функции подключаются по маске: список файлов здесь не хранится.
 # Порядок (Private, Public, Completers; внутри - по полному пути) детерминирован;
 # функции вызываются только после загрузки модуля, так что порядок на работу не влияет.
+# <build:files>
 foreach ($dir in 'Private', 'Public', 'Completers') {
     $dirPath = Join-Path $PSScriptRoot $dir
     if (-not (Test-Path -LiteralPath $dirPath)) { continue }
@@ -48,6 +49,7 @@ foreach ($dir in 'Private', 'Public', 'Completers') {
         }
     }
 }
+# </build:files>
 
 # Единственное короткое имя: подкоманды вместо отдельных команд.
 Set-Alias -Name edt -Value Invoke-EdtCommand
