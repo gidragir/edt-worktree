@@ -136,8 +136,12 @@ function Test-EdtEnvironment {
                 & $add "[$n] новые расширения" 'warn' "Не в списке рабочих: $($unused -join ', ')" "edt project ext $n"
             }
 
-            $reference = Join-Path (Join-Path ([string]$cfg.paths.workspaces_root) $n) '_reference'
+            $projectWs = Join-Path ([string]$cfg.paths.workspaces_root) $n
+            $reference = Join-Path $projectWs '_reference'
             if (Test-Path -LiteralPath $reference) { & $add "[$n] эталон" 'ok' $reference }
+            elseif (Test-Path -LiteralPath (Join-Path $projectWs '_reference_preprod')) {
+                & $add "[$n] эталон" 'warn' 'Эталон 2.x _reference_preprod: warmup переименует его в _reference и пересоберёт' "edt warmup $n"
+            }
             else { & $add "[$n] эталон" 'warn' 'Эталонная рабочая область не собрана' "edt warmup $n" }
         } catch {
             & $add "[$n] проверка" 'error' "Проверка проекта прервалась: $($_.Exception.Message)" "edt project list"

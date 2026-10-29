@@ -60,6 +60,15 @@ Describe 'Test-EdtEnvironment (edt doctor)' {
         $row.Status | Should -Be 'warn'
     }
 
+    It 'старый _reference_preprod - warn с пояснением про переименование' {
+        New-EdtWtTestRepo -Root $script:R -Name 'p' -Branch 'main' -Projects @{ 'src/cf' = 'Configuration' } | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $script:S 'p\_reference_preprod') -Force | Out-Null
+        Set-DoctorConfig -Projects @{ p = @{ ref_branch = 'main'; cf_project = 'src/cf'; extensions = @() } }
+        $row = Test-EdtEnvironment | Where-Object Fix -Eq 'edt warmup p'
+        $row.Status | Should -Be 'warn'
+        $row.Detail | Should -Match '_reference_preprod'
+    }
+
     It 'нет клона - error' {
         Set-DoctorConfig -Projects @{ p = @{ ref_branch = 'main'; cf_project = 'src/cf'; extensions = @() } }
         @(Test-EdtEnvironment | Where-Object { $_.Check -match 'клон' -and $_.Status -eq 'error' }).Count | Should -BeGreaterThan 0
