@@ -544,6 +544,18 @@ function Invoke-EdtWtCli {
     $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
+    # 1cedtcli не принимает -vm (передаёт его в java), а лончер без -vm берёт первый
+    # javaw из PATH (шим mise, Oracle java8path) или Java 8 из реестра и падает с
+    # "Incompatible JVM" (ExitCode 14). Поэтому JDK кладётся первой в PATH процесса.
+    $cliJvm = Resolve-EdtWtGuiJvm -EdtGuiPath (Join-Path (Split-Path -Parent $Context.EdtCliPath) '1cedt.exe') -VmPath (Get-EdtWtProperty $Context 'VmPath')
+    if ($cliJvm.Path) {
+        $jdkBin = Split-Path -Parent (Split-Path -Parent $cliJvm.Path)
+        $psi.Environment['PATH'] = "$jdkBin;$($psi.Environment['PATH'])"
+        $psi.Environment['JAVA_HOME'] = Split-Path -Parent $jdkBin
+    } elseif ($cliJvm.Reason -eq 'none') {
+        Write-Warning "JDK 17 с JavaFX не найдена, см. edt doctor. 1cedtcli возьмёт JVM из PATH или реестра."
+    }
+
     $started = [Diagnostics.Stopwatch]::StartNew()
     $proc = [System.Diagnostics.Process]::Start($psi)
     # stderr читается асинхронно ДО синхронного чтения stdout: иначе переполнение

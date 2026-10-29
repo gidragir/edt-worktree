@@ -7,6 +7,7 @@
 - **JavaFX обязателен**: 1C:EDT требует Java 17 с поддержкой JavaFX (модули `javafx.*`, библиотека `javafx-swt.jar`). Стандартные сборки OpenJDK (Temurin, headless-дистрибутивы) вызывают ошибку *"Поддержка JavaFX не установлена"*. Допустимы только полные сборки (Azul Zulu FX, Axiom JDK Full, Liberica Full).
 - **Конфликт реестра Windows**: Eclipse Equinox Launcher опрашивает реестр Windows (`HKLM\SOFTWARE\JavaSoft\Java Runtime Environment`) раньше переменной `PATH`. Если на машине установлена Java 8, лончер падает с *"Incompatible JVM: Version 1.8.0"*.
 - **Выбор JVM для GUI — только через `Resolve-EdtWtGuiJvm`**, порядок: (1) `edt.vm_path` из конфига; (2) если в `1cedt.ini` рядом с `1cedt.exe` уже есть `-vm` — `-vm` не передаётся (ini установщика EDT главнее); (3) `JAVA_HOME`, только если это JDK 17+ с JavaFX (`Test-EdtWtJdkHasJavaFx`); (4) JDK с JavaFX в `Program Files` (Zulu, BellSoft, Axiom, Java); (5) ничего — запуск без `-vm` и предупреждение со ссылкой на `edt doctor`. Если `-vm` передаётся, то перед `-data`. Все запуски GUI (включая перезапуск после `edt add`) идут через `Start-EdtWtGui`; прямой `Start-Process` IDE запрещён.
+- **JVM для 1cedtcli**: `-vm` 1cedtcli не принимает (отдаёт его в java, *"Unrecognized option: -vm"*). `Invoke-EdtWtCli` берёт JDK из `Resolve-EdtWtGuiJvm` и ставит её `bin` первой в `PATH` и в `JAVA_HOME` дочернего процесса. Без этого лончер находит первый `javaw` из PATH (шим mise, Oracle `java8path`) или Java 8 из реестра и падает с ExitCode 14 за секунду.
 
 ## 2. Экранирование аргументов в PowerShell (Start-Process)
 

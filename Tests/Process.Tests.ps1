@@ -93,4 +93,25 @@ Describe 'Invoke-EdtWtCli' {
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'JDK из Resolve-EdtWtGuiJvm первая в PATH и в JAVA_HOME процесса 1cedtcli' {
+        # 1cedtcli не принимает -vm, а лончер без него берёт первый javaw из PATH
+        # (шим mise, Oracle java8path) или Java 8 из реестра.
+        $root = New-EdtWtTestRoot
+        try {
+            $cli = Join-Path $root 'fakecli.cmd'
+            Set-Content -LiteralPath $cli -Value @('@echo off', 'echo PATH=%PATH%', 'echo JH=%JAVA_HOME%') -Encoding ASCII
+            $jdk = Join-Path $root 'jdk 17'
+            Mock -ModuleName EdtWorktree Resolve-EdtWtGuiJvm { [pscustomobject]@{ Path = "$jdk\bin\server\jvm.dll"; Reason = 'scan' } }.GetNewClosure()
+            $ctx = [pscustomobject]@{ EdtCliPath = $cli; JvmArgs = '-Xmx2g'; TimeoutSec = 60 }
+            $out = & (Get-Module EdtWorktree) {
+                param($c, $w) Invoke-EdtWtCli -Context $c -WorkspaceDir $w -Commands @('version') -MaxHeap '2g'
+            } $ctx (Join-Path $root 'ws') 6>&1 | Out-String
+            $out | Should -Match ([regex]::Escape("PATH=$jdk\bin;"))
+            $out | Should -Match ([regex]::Escape("JH=$jdk"))
+            $env:PATH | Should -Not -Match ([regex]::Escape("$jdk\bin"))
+        } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
