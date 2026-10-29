@@ -122,6 +122,10 @@ function Install-EdtWorktree {
     $source = $null
     if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'EdtWorktree.psd1'))) {
         $source = $PSScriptRoot
+        # Запуск через саму ссылку модуля: берём реальную цель, иначе замена ссылки удалит свой источник.
+        $srcItem = Get-Item -LiteralPath $source -Force
+        $srcTarget = $srcItem.ResolveLinkTarget($true)
+        if ($srcTarget) { $source = $srcTarget.FullName }
         Write-Host "    Используется клон: $source"
     } else {
         $source = $InstallDir
@@ -177,13 +181,17 @@ function Install-EdtWorktree {
     # 5. bin в PATH пользователя (без дублей) и текущей сессии.
     $binDir = Join-Path $source 'bin'
     if (-not $NoPath) {
-        $userPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
-        $newPath = Add-EdtWtInstallPathEntry -PathValue $userPath -Entry $binDir
-        if ($newPath -ne $userPath) {
-            [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-            Write-Host "    $binDir добавлен в PATH пользователя" -ForegroundColor Green
-        } else {
-            Write-Host "    $binDir уже в PATH пользователя"
+        # EDT_PATH_SCOPE=Process (шов для тестов): реестр пользователя не читается и не пишется.
+        $processOnly = ($env:EDT_PATH_SCOPE -eq 'Process')
+        if (-not $processOnly) {
+            $userPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
+            $newPath = Add-EdtWtInstallPathEntry -PathValue $userPath -Entry $binDir
+            if ($newPath -ne $userPath) {
+                [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+                Write-Host "    $binDir добавлен в PATH пользователя" -ForegroundColor Green
+            } else {
+                Write-Host "    $binDir уже в PATH пользователя"
+            }
         }
         $env:Path = Add-EdtWtInstallPathEntry -PathValue $env:Path -Entry $binDir
     }

@@ -86,6 +86,64 @@ Describe 'Install-EdtWorktree' {
     }
 }
 
+Describe 'Install-EdtWorktree: PATH при EDT_PATH_SCOPE=Process' {
+    BeforeAll {
+        $script:PrevScope = $env:EDT_PATH_SCOPE
+        $env:EDT_PATH_SCOPE = 'Process'
+    }
+    AfterAll {
+        $env:EDT_PATH_SCOPE = $script:PrevScope
+        $env:Path = $script:PrevPath
+    }
+    BeforeEach {
+        # Защита пользовательского PATH: без этого шва установщик без -NoPath вызывать нельзя.
+        $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
+        # Каталог git остаётся в PATH: без него установщик выходит до шага PATH.
+        $script:GitDir = Split-Path -Parent (Get-Command git -CommandType Application | Select-Object -First 1).Source
+        $env:Path = 'C:\edtwt-test-a;' + $script:GitDir
+        $script:case = Join-Path $script:TestCfg.Root ('case_' + [guid]::NewGuid().ToString('N'))
+        $script:inst = Join-Path $script:case 'inst'
+        $script:mods = Join-Path $script:case 'Modules'
+        $script:bin = Join-Path $script:inst 'bin'
+    }
+    AfterEach { $env:Path = $script:PrevPath }
+
+    It 'добавляет bin в PATH процесса один раз и повторный запуск не дублирует' {
+        $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
+        Install-EdtWorktree -InstallDir $inst -RepoUrl $script:Bare -ModulesDir $mods -NoSetup 6>$null
+        Install-EdtWorktree -InstallDir $inst -RepoUrl $script:Bare -ModulesDir $mods -NoSetup 6>$null
+        Test-Path -LiteralPath "$mods\EdtWorktree\EdtWorktree.psd1" | Should -BeTrue
+        @($env:Path -split ';' | Where-Object { $_ -eq $script:bin }).Count | Should -Be 1
+        $env:Path | Should -BeLike 'C:\edtwt-test-a;*'
+    }
+
+    It 'не дублирует запись, отличающуюся регистром и хвостовым слешем' {
+        $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
+        $env:Path = 'C:\edtwt-test-a;' + $script:GitDir + ';' + $script:bin.ToUpperInvariant() + '\'
+        Install-EdtWorktree -InstallDir $inst -RepoUrl $script:Bare -ModulesDir $mods -NoSetup 6>$null
+        Test-Path -LiteralPath "$mods\EdtWorktree\EdtWorktree.psd1" | Should -BeTrue
+        @($env:Path -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ieq $script:bin }).Count | Should -Be 1
+    }
+}
+
+Describe 'Install-EdtWorktree: запуск через ссылку модуля' {
+    It 'пересоздаёт ссылку и не удаляет собственный источник' {
+        $case = Join-Path $script:TestCfg.Root ('case_' + [guid]::NewGuid().ToString('N'))
+        $dev = Join-Path $case 'dev'
+        $mods = Join-Path $case 'Modules'
+        New-Item -ItemType Directory -Path "$dev\bin" -Force | Out-Null
+        New-Item -ItemType Directory -Path $mods -Force | Out-Null
+        Set-Content -LiteralPath "$dev\EdtWorktree.psd1" -Value '@{}'
+        Set-Content -LiteralPath "$dev\marker.txt" -Value 'x'
+        Copy-Item -LiteralPath (Join-Path $script:StandaloneDir 'install.ps1') -Destination $dev
+        New-Item -ItemType Junction -Path "$mods\EdtWorktree" -Target $dev | Out-Null
+        $out = pwsh -NoProfile -Command ". '$mods\EdtWorktree\install.ps1'; Install-EdtWorktree -InstallDir '$case\inst' -RepoUrl 'file:///nonexistent' -ModulesDir '$mods' -NoSetup -NoPath 6>`$null; (Get-Item '$mods\EdtWorktree').Target"
+        ($out | Select-Object -Last 1) | Should -Be $dev
+        Test-Path "$dev\marker.txt" | Should -BeTrue
+        Test-Path "$mods\EdtWorktree\EdtWorktree.psd1" | Should -BeTrue
+    }
+}
+
 Describe 'Add-EdtWtInstallPathEntry' {
     It 'добавляет bin в PATH без дублей' {
         Add-EdtWtInstallPathEntry -PathValue 'C:\a;D:\x\bin\' -Entry 'd:\x\bin' | Should -Be 'C:\a;D:\x\bin\'
