@@ -41,3 +41,18 @@ Describe 'Раскладка модуля: одна функция - один ф
         @($hits).Count | Should -Be 0
     }
 }
+
+Describe 'Манифест' {
+    It 'манифест готов к публикации' -Skip:($env:EDT_TEST_MODULE) {
+        $psd1 = Join-Path $script:SrcRoot 'EdtWorktree.psd1'
+        { Test-ModuleManifest -Path $psd1 -ErrorAction Stop | Out-Null } | Should -Not -Throw
+        $m = Import-PowerShellDataFile $psd1
+        $m.CompatiblePSEditions | Should -Be @('Core')
+        $m.PrivateData.PSData.ProjectUri | Should -Be 'https://github.com/gidragir/edt-worktree'
+        $m.PrivateData.PSData.LicenseUri | Should -Be 'https://github.com/gidragir/edt-worktree/blob/main/LICENSE'
+        $m.PrivateData.PSData.ReleaseNotes | Should -Match 'CHANGELOG.md'
+        $m.PrivateData.PSData.Tags | Should -Contain 'Windows'
+        $m.PrivateData.PSData.Tags | Should -Contain 'PSEdition_Core'
+        Test-Path -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'LICENSE') | Should -BeTrue
+    }
+}

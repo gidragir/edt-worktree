@@ -5,6 +5,8 @@
     Author            = 'Balter'
     Description       = 'Управление рабочими областями 1C:EDT для git worktree: прогрев эталона, клонирование, синхронизация, запуск IDE.'
     PowerShellVersion = '7.0'
+    CompatiblePSEditions = @('Core')
+    Copyright         = '(c) 2026 gidragir'
 
     FunctionsToExport = @(
         # Основная команда
@@ -40,7 +42,10 @@
 
     PrivateData = @{
         PSData = @{
-            Tags = @('1C', 'EDT', 'git-worktree')
+            Tags         = @('1C', 'EDT', 'git-worktree', 'Windows', 'PSEdition_Core')
+            ProjectUri   = 'https://github.com/gidragir/edt-worktree'
+            LicenseUri   = 'https://github.com/gidragir/edt-worktree/blob/main/LICENSE'
+            ReleaseNotes = 'https://github.com/gidragir/edt-worktree/blob/main/CHANGELOG.md'
         }
     }
 }

@@ -1,0 +1,5 @@
+{
+  "powershell.scriptAnalysis.settingsPath": "PSScriptAnalyzerSettings.psd1",
+  "[powershell]": { "files.encoding": "utf8bom" },
+  "files.eol": "\n"
+}

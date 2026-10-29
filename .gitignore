@@ -4,9 +4,18 @@ temp/
 scratch/
 
 # IDE files
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Build and test output
+out/
+TestResults/
+testResults.xml
+coverage.xml
+*.nupkg
