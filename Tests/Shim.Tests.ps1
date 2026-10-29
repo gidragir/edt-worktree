@@ -15,13 +15,14 @@
     $env:EDT_SHIM_DIR = $script:ShimDir
     $env:EDT_PATH_SCOPE = 'Process'
 
-    # Поддельный модуль EdtWorktree двух версий: bin\edt.ps1 печатает версию и аргументы, код - из первого аргумента.
-    foreach ($v in '4.0.0', '4.1.0') {
+    # Поддельный модуль EdtWorktree двух версий: bin\edt.ps1 печатает версию, аргументы и -Verbose, код - из первого аргумента.
+    # Версии 99.x: реально установленный EdtWorktree (pwsh сам добавляет каталоги пользователя в PSModulePath) их не перекроет.
+    foreach ($v in '99.0.0', '99.1.0') {
         $base = Join-Path $script:Modules "EdtWorktree\$v"
         New-Item -ItemType Directory -Path (Join-Path $base 'bin') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $base 'EdtWorktree.psd1'), "@{ ModuleVersion = '$v'; RootModule = 'EdtWorktree.psm1'; GUID = '5b0c1a52-7c52-4a49-9d2e-0a3f5f7d1c11' }", [Text.UTF8Encoding]::new($true))
         [IO.File]::WriteAllText((Join-Path $base 'EdtWorktree.psm1'), '', [Text.UTF8Encoding]::new($true))
-        $fake = "param([Parameter(ValueFromRemainingArguments)][string[]]`$A)`nWrite-Output ('VERSION=$v ARGS=' + (`$A -join '|'))`nexit ([int]`$A[0])`n"
+        $fake = "[CmdletBinding()]`nparam([Parameter(ValueFromRemainingArguments)][string[]]`$A)`nWrite-Output ('VERSION=$v ARGS=' + (`$A -join '|') + ' VERBOSE=' + `$PSBoundParameters.ContainsKey('Verbose'))`nexit ([int]`$A[0])`n"
         [IO.File]::WriteAllText((Join-Path $base 'bin\edt.ps1'), $fake, [Text.UTF8Encoding]::new($true))
     }
     $script:M = Get-Module EdtWorktree
@@ -62,8 +63,16 @@ Describe 'Постоянный shim edt' {
     It 'edt.cmd вызывает наибольшую версию' {
         Install-Shim | Out-Null
         $r = & $script:RunShim $script:Modules @('0')
-        $r.Output | Should -Match '4\.1\.0'
-        $r.Output | Should -Not -Match '4\.0\.0'
+        $r.Output | Should -Match '99\.1\.0'
+        $r.Output | Should -Not -Match '99\.0\.0'
+    }
+
+    It 'общие ключи и неизвестные ключи доходят до bin\edt.ps1 модуля' {
+        Install-Shim | Out-Null
+        $r = & $script:RunShim $script:Modules @('0', 'status', '-foo', '-Verbose')
+        $r.Output | Should -Match 'VERBOSE=True'
+        $r.Output | Should -Match 'status\|-foo'
+        $r.ExitCode | Should -Be 0
     }
 
     It 'аргументы с пробелами доходят без искажений' {
@@ -127,9 +136,32 @@ Describe 'Постоянный shim edt' {
         $dir | Should -Not -BeLike ((Join-Path $local 'EdtWorktree') + '\*')
     }
 
-    It 'Install-EdtWtShim отказывается ставить shim внутрь git-репозитория' {
+    It 'Test-EdtWtLegacyClone: .git и манифест в корне или в src\EdtWorktree' {
+        $base = Join-Path $script:UserHome 'клоны'
+        $a = Join-Path $base 'корень'; $b = Join-Path $base 'src-раскладка'; $c = Join-Path $base 'чужой'
+        New-Item -ItemType Directory -Path "$a\.git", "$b\.git", "$b\src\EdtWorktree", "$c\.git" -Force | Out-Null
+        Set-Content -LiteralPath "$a\EdtWorktree.psd1" -Value '@{}'
+        Set-Content -LiteralPath "$b\src\EdtWorktree\EdtWorktree.psd1" -Value '@{}'
+        & $script:M { param($p) Test-EdtWtLegacyClone -Path $p } $a | Should -BeTrue
+        & $script:M { param($p) Test-EdtWtLegacyClone -Path $p } $b | Should -BeTrue
+        & $script:M { param($p) Test-EdtWtLegacyClone -Path $p } $c | Should -BeFalse
+    }
+
+    It 'Install-EdtWtShim ставит shim, если выше лежит посторонний git-репозиторий (dotfiles в профиле)' {
+        $profileDir = Join-Path $script:UserHome 'профиль dotfiles'
+        New-Item -ItemType Directory -Path (Join-Path $profileDir '.git') -Force | Out-Null
+        $env:EDT_SHIM_DIR = Join-Path $profileDir 'AppData\Local\Programs\EdtWorktree\bin'
+        try {
+            $dir = Install-Shim
+        } finally { $env:EDT_SHIM_DIR = $script:ShimDir }
+        $dir | Should -Be (Join-Path $profileDir 'AppData\Local\Programs\EdtWorktree\bin')
+        Test-Path -LiteralPath (Join-Path $dir 'edt.cmd') | Should -BeTrue
+    }
+
+    It 'Install-EdtWtShim отказывается ставить shim внутрь клона EdtWorktree' {
         $repo = Join-Path $script:UserHome 'репо с git'
         New-Item -ItemType Directory -Path (Join-Path $repo '.git'), (Join-Path $repo 'bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'EdtWorktree.psd1') -Value '@{}'
         Set-Content -LiteralPath (Join-Path $repo 'bin\edt.cmd') -Value 'tracked'
         $env:EDT_SHIM_DIR = Join-Path $repo 'bin'
         try {

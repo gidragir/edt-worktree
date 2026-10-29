@@ -75,6 +75,26 @@ Describe 'edt setup' {
             $out | Should -BeLike '*2025.1.0*'
         }
 
+        It 'под установщиком с -NoPath (EDT_INSTALL_NOPATH=1) ставит shim без записи в PATH' {
+            Mock -ModuleName EdtWorktree Install-EdtWtShim { 'shim-dir' }
+            $prev = $env:EDT_INSTALL_NOPATH
+            $env:EDT_INSTALL_NOPATH = '1'
+            try {
+                Invoke-EdtSetup -ReposRoot $script:R -WorktreesRoot $script:W -WorkspacesRoot $script:S 6>$null | Out-Null
+            } finally { $env:EDT_INSTALL_NOPATH = $prev }
+            Should -Invoke -ModuleName EdtWorktree Install-EdtWtShim -Times 1 -Exactly -ParameterFilter { $NoPath.IsPresent }
+        }
+
+        It 'без EDT_INSTALL_NOPATH ставит shim с записью в PATH' {
+            Mock -ModuleName EdtWorktree Install-EdtWtShim { 'shim-dir' }
+            $prev = $env:EDT_INSTALL_NOPATH
+            $env:EDT_INSTALL_NOPATH = $null
+            try {
+                Invoke-EdtSetup -ReposRoot $script:R -WorktreesRoot $script:W -WorkspacesRoot $script:S 6>$null | Out-Null
+            } finally { $env:EDT_INSTALL_NOPATH = $prev }
+            Should -Invoke -ModuleName EdtWorktree Install-EdtWtShim -Times 1 -Exactly -ParameterFilter { -not $NoPath.IsPresent }
+        }
+
         It 'повреждённый конфиг: ошибка до создания каталогов' {
             '{ broken' | Set-Content $script:CfgPath
             { Invoke-EdtSetup -ReposRoot $script:R -WorktreesRoot $script:W -WorkspacesRoot $script:S } | Should -Throw '*Конфиг повреждён*'

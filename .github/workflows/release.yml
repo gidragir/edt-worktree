@@ -61,7 +61,8 @@ jobs:
           Copy-Item -Path "out/EdtWorktree/$version/*" -Destination $stage -Recurse -Force
           Test-ModuleManifest (Join-Path $stage 'EdtWorktree.psd1') | Out-Null
           if (-not (Get-Command Publish-PSResource -ErrorAction SilentlyContinue)) {
-            Install-PSResource Microsoft.PowerShell.PSResourceGet -TrustRepository
+            # Без PSResourceGet нет и его командлетов установки: модуль ставится через PowerShellGet.
+            Install-Module Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery
           }
           Publish-PSResource -Path $stage -Repository PSGallery -ApiKey $env:PSGALLERY_API_KEY
 

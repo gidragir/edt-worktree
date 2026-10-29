@@ -14,7 +14,7 @@
 
 ### Added
 - CI: проверки над `src/` и над собранным модулем, установка из zip; выпуск по тегу `v*` (`.github/workflows/release.yml`): публикация в PowerShell Gallery, затем GitHub Release с `EdtWorktree.zip` и `install.ps1`.
-- Постоянный shim `edt` в `%LOCALAPPDATA%\Programs\EdtWorktree\bin` (`edt.cmd` и запускатель `edt.ps1`): не зависит от версии модуля, берёт наибольшую установленную; ставится командой `edt setup`, проверяется в `edt doctor`. Внутрь git-репозитория (в том числе клона 3.0 в `%LOCALAPPDATA%\EdtWorktree`) shim не ставится.
+- Постоянный shim `edt` в `%LOCALAPPDATA%\Programs\EdtWorktree\bin` (`edt.cmd` и запускатель `edt.ps1`): не зависит от версии модуля, берёт наибольшую установленную; ставится командой `edt setup`, проверяется в `edt doctor`. Внутрь клона EdtWorktree (в том числе клона 3.0 в `%LOCALAPPDATA%\EdtWorktree`) shim не ставится; посторонние репозитории выше по пути (dotfiles в профиле) не мешают.
 - Табличные виды (`EdtWorktree.format.ps1xml`) для строк `status`, `update`, `project`, `config`, `doctor`: типы `EdtWorktree.Worktree`, `.DoctorCheck`, `.Project`, `.ConfigSummary`, `.ReferenceUpdate`.
 - Лицензия MIT (`LICENSE`).
 - `self-update` и `uninstall` определяют вид установки (Dev, Legacy, Gallery, Zip) и действуют по-своему: Update-PSResource, установщик из релиза, `git pull` в клоне разработчика; удаление модуля, shim и (с `-Purge`) чистого клона.

@@ -368,6 +368,57 @@ Describe 'Install-EdtWorktree -Dev' {
         Test-Path -LiteralPath (Join-Path $script:SrcModule 'EdtWorktree.psd1') | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $script:SrcModule "$($script:Version)") | Should -BeFalse
     }
+
+    It '-Dev поверх ссылки 3.0 на тот же клон: без совета удалить клон, bin снят, ссылка на src' {
+        $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
+        $clone = Join-Path $script:case 'рабочий клон'
+        New-Item -ItemType Directory -Path (Join-Path $clone '.git'), (Join-Path $clone 'bin'), (Join-Path $clone 'scripts'), (Join-Path $clone 'src\EdtWorktree') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'src\EdtWorktree\EdtWorktree.psd1') -Value '@{}'
+        Set-Content -LiteralPath (Join-Path $clone 'незакоммиченное.txt') -Value 'работа'
+        Copy-Item -LiteralPath (Join-Path $script:RepoRoot 'scripts\install.ps1') -Destination (Join-Path $clone 'scripts')
+        New-Item -ItemType Directory -Path $mods -Force | Out-Null
+        New-Item -ItemType Junction -Path (Join-Path $mods 'EdtWorktree') -Target $clone | Out-Null
+        $cloneBin = Join-Path $clone 'bin'
+
+        $out = & $script:Pwsh -NoProfile -Command {
+            param($Installer, $Mods, $CloneBin)
+            $env:EDT_INSTALL_NO_AUTORUN = '1'
+            $env:Path = 'C:\edtwt-test-a;' + $CloneBin
+            . $Installer
+            Install-EdtWorktree -Dev -ModulesDir $Mods -NoSetup -NoPath 6>&1 | Out-String
+            'PATH=' + $env:Path
+            'TARGET=' + [string](Get-Item -LiteralPath (Join-Path $Mods 'EdtWorktree') -Force).Target
+        } -args (Join-Path $clone 'scripts\install.ps1'), $mods, $cloneBin
+        $text = $out -join "`n"
+
+        $text | Should -Not -Match 'можно удалить'
+        $text | Should -Match 'Старая установка 3\.0 снята'
+        $text | Should -Match ([regex]::Escape('PATH=C:\edtwt-test-a') + '(\r?\n|$)')
+        $text | Should -Match ([regex]::Escape('TARGET=' + (Join-Path $clone 'src\EdtWorktree')))
+        Get-Content -LiteralPath (Join-Path $clone 'незакоммиченное.txt') | Should -Be 'работа'
+        Test-Path -LiteralPath (Join-Path $clone '.git') | Should -BeTrue
+    }
+}
+
+Describe 'Первичная настройка из установщика' {
+    It 'при -NoPath передаёт edt setup запрет менять PATH (EDT_INSTALL_NOPATH)' {
+        $case = & $script:NewCase
+        $mod = Join-Path $case 'модуль'
+        $log = Join-Path $case 'setup.log'
+        New-Item -ItemType Directory -Path (Join-Path $mod 'bin') -Force | Out-Null
+        # Поддельный bin\edt.ps1 записывает, что получил.
+        $fake = "param([Parameter(ValueFromRemainingArguments)][string[]]`$A)`n[IO.File]::WriteAllText('$log', (`$A -join ' ') + '|NOPATH=' + `$env:EDT_INSTALL_NOPATH)`n"
+        [IO.File]::WriteAllText((Join-Path $mod 'bin\edt.ps1'), $fake, [Text.UTF8Encoding]::new($true))
+        $prev = $env:EDT_INSTALL_NOPATH
+        $env:EDT_INSTALL_NOPATH = $null
+        try {
+            Invoke-EdtWtInstallSetup -ModuleDir $mod -NoPath
+            Get-Content -LiteralPath $log -Raw | Should -Be 'setup|NOPATH=1'
+            $env:EDT_INSTALL_NOPATH | Should -BeNullOrEmpty
+            Invoke-EdtWtInstallSetup -ModuleDir $mod
+            Get-Content -LiteralPath $log -Raw | Should -Be 'setup|NOPATH='
+        } finally { $env:EDT_INSTALL_NOPATH = $prev }
+    }
 }
 
 Describe 'Add-EdtWtInstallPathEntry и Remove-EdtWtInstallPathEntry' {

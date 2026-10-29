@@ -81,7 +81,8 @@
     }
 
     if ($PSCmdlet.ShouldProcess((Get-EdtWtShimDir), 'Установить shim edt')) {
-        $shimDir = Install-EdtWtShim
+        # Установщик с -NoPath (EDT_INSTALL_NOPATH=1): shim ставится без записи в PATH.
+        $shimDir = Install-EdtWtShim -NoPath:($env:EDT_INSTALL_NOPATH -eq '1')
         Write-Host "✓ Shim edt (nushell, cmd, планировщик): $shimDir" -ForegroundColor Green
     }
 

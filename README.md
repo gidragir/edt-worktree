@@ -78,8 +78,8 @@ pwsh -NoProfile -File D:\tools\install.ps1 -ZipPath D:\tools\EdtWorktree.zip
 
 ### edt для cmd, nushell и агентов
 
-Команда `edt` работает вне pwsh через shim: `edt setup` ставит его, если его
-нет (установщик делает то же), и добавляет каталог shim в PATH. После этого
+Команда `edt` работает вне pwsh через shim: `edt setup` ставит или обновляет
+его (установщик делает то же) и добавляет каталог shim в PATH. После этого
 `edt open my-project TASK-123 -NoGui` вызывается из cmd, bash, nushell,
 планировщика и агентов. `edt doctor` проверяет shim и PATH.
 
@@ -219,8 +219,8 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 ## Обновление и удаление
 
-`edt self-update` и `edt uninstall` определяют вид установки (`edt doctor`
-показывает его) и действуют по-своему:
+`edt self-update` и `edt uninstall` определяют вид установки и действуют
+по-своему:
 
 | Вид | Как установлен | `edt self-update` | `edt uninstall` |
 |---|---|---|---|
@@ -296,16 +296,28 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 - `scripts/install.ps1` - установщик (самодостаточный, работает под `irm | iex`; в выпуск попадает как `install.ps1`).
 - `scripts/build.ps1` - сборка выпуска; `scripts/Invoke-EdtWtChecks.ps1` - тесты и анализатор.
 - `.github/workflows/` - `checks.yml` (проверки) и `release.yml` (выпуск по тегу).
-- `src/EdtWorktree/EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
-- `src/EdtWorktree/bin/edt.ps1`, `src/EdtWorktree/bin/edt.cmd` - вход для любых оболочек и планировщика.
-- `src/EdtWorktree/Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),
-  `ProjectCommands`, `ConfigCommands` (setup, config), `DoctorCommand`,
-  `LifecycleCommands` (update, self-update, uninstall), `Invoke-EdtCommand`
-  (диспетчер подкоманд).
-- `src/EdtWorktree/Private/` - `Configuration` и `ConfigMigration` (конфиг v3 и перенос с 2.x),
-  `ProjectDiscovery` (проекты в клоне, проект по пути), `GitWorktree` (ветки,
-  worktree, сборка эталона), `EdtProcess` (поиск EDT, JVM, запуск GUI и
-  `1cedtcli`, процессы), `EclipseLocation` (`.location`), `Workspace` (рабочие
-  области, настройки IDE, справка), `Interaction` (диалоги).
+- `src/EdtWorktree/EdtWorktree.psd1` - манифест; `EdtWorktree.psm1` - загрузка
+  файлов Private, Public, Completers (в выпуске склеиваются в один `psm1`); алиас `edt`;
+  `EdtWorktree.format.ps1xml` - табличные виды.
+- В `src/EdtWorktree/` одна функция - один файл, имя файла совпадает с именем функции.
+- `src/EdtWorktree/Public/` - экспортируемые команды: `Invoke-EdtCommand` (диспетчер
+  подкоманд), `Invoke-EdtWorktreeOpen`, `Invoke-EdtWorktreeWarmup`,
+  `Invoke-EdtWorktreeAdd`, `Invoke-EdtWorktreeClean`, `Get-EdtWorktreeList`,
+  `Update-EdtWtReference`, `Invoke-EdtSetup`, `Get-EdtConfig`/`Set-EdtConfig`,
+  `Get-EdtProject`/`Add-EdtProject`/`Set-EdtProject`/`Remove-EdtProject`/`Set-EdtProjectExtension`,
+  `Test-EdtEnvironment` (doctor), `Update-EdtSelf`, `Uninstall-EdtWorktree`, `Get-EdtWtContext`.
+- `src/EdtWorktree/Private/` - внутренние функции по областям:
+  - `src/EdtWorktree/Private/Config` - конфиг v3 и перенос с 2.x;
+  - `src/EdtWorktree/Private/Discovery` - проекты в клоне, проект по пути;
+  - `src/EdtWorktree/Private/Eclipse` - `.location` и имена проектов рабочей области;
+  - `src/EdtWorktree/Private/Git` - git (`Invoke-EdtWtGit`), ветки, worktree;
+  - `src/EdtWorktree/Private/Install` - вид установки, shim, ссылка модуля, PATH;
+  - `src/EdtWorktree/Private/Interaction` - диалоги и разбор общих ключей;
+  - `src/EdtWorktree/Private/Process` - поиск EDT, JVM, запуск GUI, `1cedtcli`, vrunner;
+  - `src/EdtWorktree/Private/Workspace` - рабочие области, настройки IDE, справка.
 - `src/EdtWorktree/Completers/` - автодополнение `edt`.
-- `Tests/` - Pester 5.
+- `src/EdtWorktree/bin/edt.ps1`, `src/EdtWorktree/bin/edt.cmd` - вход для любых оболочек и планировщика.
+- `src/EdtWorktree/bin/shim/` - шаблон постоянного shim (`edt.cmd` и запускатель `edt.ps1`),
+  который `edt setup` и установщик копируют в `%LOCALAPPDATA%\Programs\EdtWorktree\bin`.
+- `Tests/` - Pester 5 (`TestHelpers.ps1` - общие помощники).
+- `docs/` - `COMMANDS.md` (справочник команд), `superpowers/` (спецификации и планы).

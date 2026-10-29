@@ -48,6 +48,27 @@ Describe 'Документация' {
         $wf | Should -Match "EDT_INSTALL_NOSETUP = '1'"
     }
 
+    It 'release.yml без Publish-PSResource ставит PSResourceGet через Install-Module' {
+        $wf = Get-Content -LiteralPath (Join-Path $script:RepoRoot '.github/workflows/release.yml') -Raw
+        $wf | Should -Match ([regex]::Escape('Install-Module Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery'))
+        $wf | Should -Not -Match 'Install-PSResource'
+    }
+
+    It 'README: doctor не показывает вид установки, карта файлов по фактической раскладке' {
+        $script:Readme | Should -Not -Match '`edt doctor`\s+показывает его'
+        foreach ($p in 'src/EdtWorktree/Private/Install', 'src/EdtWorktree/Private/Config', 'src/EdtWorktree/bin/shim', 'src/EdtWorktree/Public/') {
+            $script:Readme | Should -Match ([regex]::Escape($p))
+        }
+        foreach ($old in 'WorktreeCommands', 'ConfigCommands', 'LifecycleCommands', 'EclipseLocation', 'GitWorktree') {
+            $script:Readme | Should -Not -Match $old
+        }
+    }
+
+    It 'LICENSE заканчивается переводом строки' {
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $script:RepoRoot 'LICENSE'))
+        $bytes[-1] | Should -Be 10
+    }
+
     It 'CHANGELOG содержит раздел 4.0.0' {
         Get-Content -LiteralPath (Join-Path $script:RepoRoot 'CHANGELOG.md') -Raw | Should -Match '## \[4\.0\.0\]'
     }

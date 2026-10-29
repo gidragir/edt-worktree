@@ -10,12 +10,13 @@
     param([switch]$NoPath)
 
     $dir = Get-EdtWtShimDir
-    # Shim не кладётся внутрь git-репозитория (например, клона 3.0): иначе он перезапишет
-    # отслеживаемые файлы и исчезнет вместе с клоном.
+    # Shim не кладётся внутрь клона EdtWorktree (например, 3.0 в %LOCALAPPDATA%\EdtWorktree):
+    # иначе он перезапишет отслеживаемые файлы и исчезнет вместе с клоном. Посторонние
+    # репозитории выше по пути (dotfiles в профиле) не мешают.
     $probe = [IO.Path]::GetFullPath($dir)
     while ($probe) {
-        if (Test-Path -LiteralPath (Join-Path $probe '.git')) {
-            throw "Каталог shim $dir лежит внутри git-репозитория $probe. Укажите другой каталог в EDT_SHIM_DIR."
+        if (Test-EdtWtLegacyClone -Path $probe) {
+            throw "Каталог shim $dir лежит внутри клона EdtWorktree $probe. Укажите другой каталог в EDT_SHIM_DIR."
         }
         $probe = Split-Path -Parent $probe
     }

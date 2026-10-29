@@ -95,6 +95,28 @@ function Remove-EdtWtInstallLegacyPath {
     return $removed
 }
 
+function Invoke-EdtWtInstallSetup {
+    <#
+      Первичная настройка (edt setup) установленным модулем в дочернем pwsh. При -NoPath
+      дочернему процессу передаётся EDT_INSTALL_NOPATH=1: setup ставит shim без записи в PATH.
+      Переменная окружения текущего процесса восстанавливается.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ModuleDir,
+        [switch]$NoPath
+    )
+
+    $pwsh = (Get-Process -Id $PID).Path
+    $prev = $env:EDT_INSTALL_NOPATH
+    $env:EDT_INSTALL_NOPATH = $(if ($NoPath) { '1' } else { $null })
+    try {
+        & $pwsh -NoProfile -File (Join-Path $ModuleDir 'bin\edt.ps1') setup
+    } finally {
+        $env:EDT_INSTALL_NOPATH = $prev
+    }
+}
+
 function Get-EdtWtInstallDownload {
     <# Скачивает Url в OutFile. Адрес file:/// копируется с диска (Invoke-WebRequest его не принимает). #>
     [CmdletBinding()]
@@ -177,7 +199,8 @@ function Install-EdtWorktree {
     .PARAMETER NoSetup
         Не запускать edt setup, только напечатать следующий шаг.
     .PARAMETER NoPath
-        Не ставить shim и не добавлять его в PATH. Запись bin старой установки 3.0 убирается из PATH всегда.
+        Не менять PATH: shim не ставится, а первичная настройка (edt setup) ставит его без записи в PATH.
+        Запись bin старой установки 3.0 убирается из PATH всегда.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
@@ -266,7 +289,13 @@ function Install-EdtWorktree {
             Write-Host "    Ссылка модуля снята: $link"
             if ($oldTarget -and (Test-EdtWtInstallLegacyClone -Path $oldTarget)) {
                 Remove-EdtWtInstallLegacyPath -CloneDir $oldTarget | Out-Null
-                Write-Host "    Старая установка 3.0 снята. Клон $oldTarget больше не нужен модулю, его можно удалить" -ForegroundColor Yellow
+                $sameClone = $devSource -and $devSource.StartsWith($oldTarget + '\', [StringComparison]::OrdinalIgnoreCase)
+                if ($sameClone) {
+                    # -Dev из того же клона: это рабочий клон, ссылка переводится на его src\EdtWorktree.
+                    Write-Host "    Старая установка 3.0 снята: ссылка переводится на src\EdtWorktree клона $oldTarget" -ForegroundColor Yellow
+                } else {
+                    Write-Host "    Старая установка 3.0 снята. Клон $oldTarget больше не нужен модулю: если это не ваш рабочий клон и в нём нет незакоммиченных изменений, его можно удалить" -ForegroundColor Yellow
+                }
             }
         } elseif ($existing -and -not $Dev -and (Test-Path -LiteralPath (Join-Path $link 'EdtWorktree.psd1'))) {
             # Копия модуля от старого установщика (когда ссылку создать не удалось): не удаляем.
@@ -274,7 +303,7 @@ function Install-EdtWorktree {
             $defaultClone = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'EdtWorktree' } else { $null }
             if ($defaultClone -and (Test-EdtWtInstallLegacyClone -Path $defaultClone) -and
                 (Remove-EdtWtInstallLegacyPath -CloneDir $defaultClone)) {
-                Write-Host "    Старая установка 3.0 снята. Клон $defaultClone больше не нужен модулю, его можно удалить" -ForegroundColor Yellow
+                Write-Host "    Старая установка 3.0 снята. Клон $defaultClone больше не нужен модулю: если это не ваш рабочий клон и в нём нет незакоммиченных изменений, его можно удалить" -ForegroundColor Yellow
             }
         }
 
@@ -331,7 +360,7 @@ function Install-EdtWorktree {
     $interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
     if (-not $NoSetup -and $interactive -and -not (Test-Path -LiteralPath $configPath)) {
         Write-Host "`n==> edt setup" -ForegroundColor Cyan
-        & $pwsh -NoProfile -File (Join-Path $moduleDir 'bin\edt.ps1') setup
+        Invoke-EdtWtInstallSetup -ModuleDir $moduleDir -NoPath:$NoPath
     } else {
         Write-Host "`nСледующий шаг: edt setup" -ForegroundColor Yellow
     }
