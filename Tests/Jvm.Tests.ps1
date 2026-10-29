@@ -77,6 +77,15 @@ Describe 'Resolve-EdtWtGuiVmArgs' {
         $r | Should -BeNullOrEmpty
     }
 
+    It 'gui_max_heap в мегабайтах не превращается в гигабайты' {
+        $r = & (Get-Module EdtWorktree) {
+            param($c, $h) Resolve-EdtWtGuiVmArgs -Context $c -MaxHeap $h
+        } $script:Ctx '12288M'
+
+        $r.MaxHeapGb | Should -Be 12
+        $r.Args | Should -Contain '-Xmx12g'
+    }
+
     It 'возвращает $null, если 1cedt.ini отсутствует' {
         Remove-Item -LiteralPath (Join-Path $script:Root '1cedt.ini') -Force
         $r = & (Get-Module EdtWorktree) {
@@ -96,6 +105,15 @@ Describe 'Resolve-EdtWtJvmArgs' {
         $r.MaxHeapGb | Should -Be 8
         $r.Args | Should -BeLike '*-Xmx8g*'
         $r.Args | Should -BeLike '*-XX:+UseG1GC*'
+    }
+
+    It 'куча в мегабайтах переводится в гигабайты, а не читается как гигабайты' {
+        $r = & (Get-Module EdtWorktree) {
+            param($a, $h) Resolve-EdtWtJvmArgs -JvmArgs $a -MaxHeap $h
+        } '-Xmx16g' '8192m'
+
+        $r.MaxHeapGb | Should -Be 8
+        $r.Args | Should -BeLike '*-Xmx8g*'
     }
 
     It 'держит -Xms не больше четверти кучи' {
@@ -183,6 +201,15 @@ Describe 'JVM для GUI' {
         $r = & $script:Resolve $script:Gui $null @($script:FxRoot)
         $r.Reason | Should -Be 'scan'
         $r.Path | Should -Be (Join-Path $script:JdkFx 'bin\server\jvm.dll')
+    }
+
+    It 'из нескольких JDK выбирается самая новая по версии, а не по строке' {
+        $env:JAVA_HOME = $null
+        $roots = Join-Path $script:Root 'many'
+        New-FakeJdk -Dir (Join-Path $roots 'zulu17.9-ca-fx') | Out-Null
+        $newest = New-FakeJdk -Dir (Join-Path $roots 'zulu17.10-ca-fx')
+        $r = & $script:Resolve $script:Gui $null @($roots)
+        $r.Path | Should -Be (Join-Path $newest 'bin\server\jvm.dll')
     }
 
     It 'ничего не найдено: Reason none, Path пуст' {

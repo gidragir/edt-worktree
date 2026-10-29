@@ -75,6 +75,22 @@ function Find-EdtWtCli {
 # 2. Разбор аргументов JVM и CLI-оболочки
 # ------------------------------------------------------------------------------
 
+function ConvertTo-EdtWtHeapGb {
+    <#
+      Размер кучи из конфига ('16g', '8192m') в целые гигабайты.
+      Мегабайты округляются вниз: Xmx больше заданного превысил бы лимит пользователя.
+    #>
+    [OutputType([int])]
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value -notmatch '^\s*(\d+)\s*([gGmM])\s*$') {
+        throw "Неверный размер кучи '$Value': ожидается число с g или m, например 16g."
+    }
+    $n = [int64]$Matches[1]
+    if ($Matches[2] -in 'm', 'M') { return [int][math]::Floor($n / 1024) }
+    return [int]$n
+}
+
 function Resolve-EdtWtJvmArgs {
     <#
       Подгоняет -Xmx/-Xms под фактически доступную память.
@@ -90,7 +106,7 @@ function Resolve-EdtWtJvmArgs {
     $freeCommitGb = if ($os) { [math]::Floor($os.FreeVirtualMemory / 1MB) } else { 0 }
 
     if ($MaxHeap) {
-        $targetGb = [int]($MaxHeap -replace '[^\d]', '')
+        $targetGb = ConvertTo-EdtWtHeapGb -Value $MaxHeap
     } else {
         $currentGb = 0
         if ($JvmArgs -match '-Xmx(\d+)g') { $currentGb = [int]$matches[1] }
@@ -139,7 +155,7 @@ function Resolve-EdtWtGuiVmArgs {
     $vmargs = @($lines[($idx + 1)..($lines.Count - 1)] | Where-Object { $_ -and $_.Trim() })
 
     if ($MaxHeap) {
-        $targetGb = [int]($MaxHeap -replace '[^\d]', '')
+        $targetGb = ConvertTo-EdtWtHeapGb -Value $MaxHeap
     } else {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
         $freeCommitGb = if ($os) { [math]::Floor($os.FreeVirtualMemory / 1MB) } else { 0 }
@@ -441,7 +457,9 @@ function Resolve-EdtWtGuiJvm {
     foreach ($root in $SearchRoots) {
         if (-not $root) { continue }
         $pattern = if ($root -match '[\*\?]') { $root } else { Join-Path $root '*' }
-        $dirs = @(Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+        # Числа в имени дополняются нулями: zulu17.10 новее zulu17.9.
+        $versionKey = { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(10, '0') }) }
+        $dirs = @(Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue | Sort-Object $versionKey -Descending)
         foreach ($d in $dirs) {
             $dll = & $toDll $d.FullName
             if ((Test-Path -LiteralPath $dll) -and (Test-EdtWtJdkHasJavaFx -JdkHome $d.FullName)) {

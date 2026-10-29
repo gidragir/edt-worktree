@@ -111,6 +111,17 @@ Describe 'Test-EdtEnvironment (edt doctor)' {
         $rows[0].Fix | Should -Match 'edt setup'
     }
 
+    It 'сбой проверки проекта или JVM - строка error, без исключения' {
+        New-EdtWtTestRepo -Root $script:R -Name 'p' -Branch 'main' -Projects @{ 'src/cf' = 'Configuration' } | Out-Null
+        Set-DoctorConfig -Projects @{ p = @{ ref_branch = 'main'; cf_project = 'src/cf'; extensions = @() } }
+        Mock -ModuleName EdtWorktree Get-EdtWtUnusedExtensions { throw 'boom-ext' }
+        Mock -ModuleName EdtWorktree Resolve-EdtWtGuiJvm { throw 'boom-jvm' }
+        $rows = @(Test-EdtEnvironment)
+        ($rows | Where-Object Detail -Match 'boom-ext').Status | Should -Be 'error'
+        ($rows | Where-Object Detail -Match 'boom-jvm').Status | Should -Be 'error'
+        @($rows | Where-Object Check -Match 'paths\.').Count | Should -Be 3
+    }
+
     It 'всё в порядке - ни одного error, конфиг не меняется' {
         New-EdtWtTestRepo -Root $script:R -Name 'p' -Branch 'main' -Projects @{ 'src/cf' = 'Configuration'; 'src/cfe_ad' = 'Extension' } | Out-Null
         New-Item -ItemType Directory -Path (Join-Path $script:S 'p\_reference') -Force | Out-Null

@@ -74,6 +74,17 @@ Describe 'Install-EdtWorktree' {
         $env:Path | Should -BeExactly $before
     }
 
+    It 'без git падает с подсказкой и ничего не создаёт' {
+        try {
+            $env:Path = 'C:\edtwt-no-git'
+            { Install-EdtWorktree -InstallDir $inst -RepoUrl $script:Bare -ModulesDir $mods -NoSetup -NoPath 6>$null } |
+                Should -Throw '*winget install Git.Git*'
+        } finally {
+            $env:Path = $script:PrevPath
+        }
+        Test-Path -LiteralPath $mods | Should -BeFalse
+    }
+
     It 'форма scriptblock передаёт ключи в Install-EdtWorktree' {
         # Если ключи потеряются, установка уйдёт во временные каталоги из переменных, а не в реальные.
         $names = 'EDT_INSTALL_NO_AUTORUN', 'EDT_INSTALL_DIR', 'EDT_INSTALL_NOSETUP', 'EDT_MODULES_DIR', 'EDT_PATH_SCOPE'

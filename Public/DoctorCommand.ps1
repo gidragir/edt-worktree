@@ -9,7 +9,8 @@ function Test-EdtEnvironment {
     .SYNOPSIS
         Проверяет окружение и зарегистрированные проекты; для каждой проблемы даёт команду исправления.
     .DESCRIPTION
-        Только чтение: ничего не пишет, не запускает процессов и не ходит в сеть.
+        Только чтение: не запускает процессов, не ходит в сеть и ничего не пишет,
+        кроме однократного переноса конфига 2.x в v3 (как любая команда edt).
         Возвращает строки Check, Status (ok|warn|error), Detail, Fix. Не бросает
         исключений на пустом или повреждённом состоянии - такое состояние это
         строка error. Код возврата 1 при наличии error выставляет bin/edt.ps1.
@@ -43,7 +44,6 @@ function Test-EdtEnvironment {
     if ($git) { & $add 'git в PATH' 'ok' $git.Source }
     else { & $add 'git в PATH' 'error' 'git не найден' 'winget install Git.Git' }
 
-
     # EDT
     $edtCli = $null
     $edtDetail = ''
@@ -70,12 +70,16 @@ function Test-EdtEnvironment {
     $vmPath = Get-EdtWtProperty $cfg.edt 'vm_path'
     if ($edtCli) {
         $gui = Join-Path (Split-Path -Parent ($edtCli -replace '/', '\')) '1cedt.exe'
-        $jvm = Resolve-EdtWtGuiJvm -EdtGuiPath $gui -VmPath $vmPath
-        if ($jvm.Reason -eq 'none') {
-            & $add 'JVM для GUI' 'warn' 'JDK 17 с JavaFX не найдена, EDT запустится без -vm' 'edt config set edt.vm_path <путь к JDK с JavaFX>'
-        } else {
-            $what = if ($jvm.Path) { $jvm.Path } else { 'без -vm (задан в 1cedt.ini)' }
-            & $add 'JVM для GUI' 'ok' "$what (причина: $($jvm.Reason))"
+        try {
+            $jvm = Resolve-EdtWtGuiJvm -EdtGuiPath $gui -VmPath $vmPath
+            if ($jvm.Reason -eq 'none') {
+                & $add 'JVM для GUI' 'warn' 'JDK 17 с JavaFX не найдена, EDT запустится без -vm' 'edt config set edt.vm_path <путь к JDK с JavaFX>'
+            } else {
+                $what = if ($jvm.Path) { $jvm.Path } else { 'без -vm (задан в 1cedt.ini)' }
+                & $add 'JVM для GUI' 'ok' "$what (причина: $($jvm.Reason))"
+            }
+        } catch {
+            & $add 'JVM для GUI' 'error' "Не удалось определить JVM: $($_.Exception.Message)" 'edt config set edt.vm_path <путь к JDK с JavaFX>'
         }
     }
     if ($vmPath) {
@@ -99,40 +103,45 @@ function Test-EdtEnvironment {
         & $add 'Проекты' 'warn' 'Нет зарегистрированных проектов' 'edt project add'
     }
     foreach ($n in $names) {
-        $def = $cfg.projects.$n
-        $repo = Join-Path ([string]$cfg.paths.repos_root) $n
-        $ref = [string](Get-EdtWtProperty $def 'ref_branch' '')
+        # Сбой одной проверки - строка error, остальные проекты проверяются дальше.
+        try {
+            $def = $cfg.projects.$n
+            $repo = Join-Path ([string]$cfg.paths.repos_root) $n
+            $ref = [string](Get-EdtWtProperty $def 'ref_branch' '')
 
-        if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
-            & $add "[$n] клон" 'error' "Клон не найден: $repo" "edt project remove $n (или клонируйте репозиторий в $repo)"
-            continue
-        }
-        & $add "[$n] клон" 'ok' $repo
-
-        $branch = Get-EdtWtCloneBranch -RepoPath $repo
-        if ($branch -eq $ref) {
-            & $add "[$n] ветка клона" 'ok' $branch
-        } else {
-            $shown = if ($branch) { $branch } else { 'HEAD отсоединён' }
-            & $add "[$n] ветка клона" 'error' "Клон на '$shown', ожидается '$ref'" "git -C $(& $quote $repo) switch $ref"
-        }
-
-        $working = @(@(Get-EdtWtProperty $def 'extensions' @()) | Where-Object { $_ })
-        foreach ($ext in $working) {
-            if (-not (Test-Path -LiteralPath (Join-Path $repo $ext))) {
-                & $add "[$n] расширение $ext" 'warn' "Рабочее расширение отсутствует на диске: $ext" "edt project ext $n -$(Split-Path -Leaf $ext)"
+            if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+                & $add "[$n] клон" 'error' "Клон не найден: $repo" "edt project remove $n (или клонируйте репозиторий в $repo)"
+                continue
             }
-        }
+            & $add "[$n] клон" 'ok' $repo
 
-        $context = [PSCustomObject]@{ RepoPath = $repo; Extensions = [string[]]$working }
-        $unused = @(Get-EdtWtUnusedExtensions -Context $context)
-        if ($unused.Count -gt 0) {
-            & $add "[$n] новые расширения" 'warn' "Не в списке рабочих: $($unused -join ', ')" "edt project ext $n"
-        }
+            $branch = Get-EdtWtCloneBranch -RepoPath $repo
+            if ($branch -eq $ref) {
+                & $add "[$n] ветка клона" 'ok' $branch
+            } else {
+                $shown = if ($branch) { $branch } else { 'HEAD отсоединён' }
+                & $add "[$n] ветка клона" 'error' "Клон на '$shown', ожидается '$ref'" "git -C $(& $quote $repo) switch $ref"
+            }
 
-        $reference = Join-Path (Join-Path ([string]$cfg.paths.workspaces_root) $n) '_reference'
-        if (Test-Path -LiteralPath $reference) { & $add "[$n] эталон" 'ok' $reference }
-        else { & $add "[$n] эталон" 'warn' 'Эталонная рабочая область не собрана' "edt warmup $n" }
+            $working = @(@(Get-EdtWtProperty $def 'extensions' @()) | Where-Object { $_ })
+            foreach ($ext in $working) {
+                if (-not (Test-Path -LiteralPath (Join-Path $repo $ext))) {
+                    & $add "[$n] расширение $ext" 'warn' "Рабочее расширение отсутствует на диске: $ext" "edt project ext $n -$(Split-Path -Leaf $ext)"
+                }
+            }
+
+            $context = [PSCustomObject]@{ RepoPath = $repo; Extensions = [string[]]$working }
+            $unused = @(Get-EdtWtUnusedExtensions -Context $context)
+            if ($unused.Count -gt 0) {
+                & $add "[$n] новые расширения" 'warn' "Не в списке рабочих: $($unused -join ', ')" "edt project ext $n"
+            }
+
+            $reference = Join-Path (Join-Path ([string]$cfg.paths.workspaces_root) $n) '_reference'
+            if (Test-Path -LiteralPath $reference) { & $add "[$n] эталон" 'ok' $reference }
+            else { & $add "[$n] эталон" 'warn' 'Эталонная рабочая область не собрана' "edt warmup $n" }
+        } catch {
+            & $add "[$n] проверка" 'error' "Проверка проекта прервалась: $($_.Exception.Message)" "edt project list"
+        }
     }
 
     return $rows.ToArray()

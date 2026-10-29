@@ -114,8 +114,7 @@ function Install-EdtWorktree {
 
     # 1-2. PowerShell 7 проверяет точка входа; здесь - git.
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Host 'git не найден. Установите: winget install Git.Git, затем повторите установку.' -ForegroundColor Red
-        return
+        throw 'git не найден. Установите: winget install Git.Git, затем повторите установку.'
     }
 
     # 3. Источник: клон, из которого запущен файл, иначе InstallDir (clone / pull --ff-only).
