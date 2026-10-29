@@ -1,41 +1,51 @@
 ﻿# ==============================================================================
 # EdtWorktree - управление рабочими областями 1C:EDT для git worktree
 # ==============================================================================
-# Загрузчик модуля: переменные, приватные помощники, публичные операции,
-# автодополнение и алиас edt. Логика лежит в Private/ и Public/ по файлу на функцию.
+# Загрузчик модуля: переменные модуля и подключение функций по маске.
+# Логика лежит в Private/<Подсистема>/ и Public/ по файлу на функцию.
 # ==============================================================================
 
 Set-StrictMode -Version Latest
 
 $script:EdtWtModuleRoot = $PSScriptRoot
-
-# Порядок важен: переменные и конфигурация читаются первыми, затем остальные подсистемы.
-$loadOrder = @(
-    # Приватные доменные подсистемы
-    (Join-Path $PSScriptRoot 'Private\Interaction.ps1')
-    (Join-Path $PSScriptRoot 'Private\GitWorktree.ps1')
-    (Join-Path $PSScriptRoot 'Private\Configuration.ps1')
-    (Join-Path $PSScriptRoot 'Private\ConfigMigration.ps1')
-    (Join-Path $PSScriptRoot 'Private\ProjectDiscovery.ps1')
-    (Join-Path $PSScriptRoot 'Private\EclipseLocation.ps1')
-    (Join-Path $PSScriptRoot 'Private\EdtProcess.ps1')
-    (Join-Path $PSScriptRoot 'Private\Workspace.ps1')
-
-    # Публичные команды
-    (Join-Path $PSScriptRoot 'Public\Invoke-EdtCommand.ps1')
-    (Join-Path $PSScriptRoot 'Public\WorktreeCommands.ps1')
-    (Join-Path $PSScriptRoot 'Public\ConfigCommands.ps1')
-    (Join-Path $PSScriptRoot 'Public\ProjectCommands.ps1')
-    (Join-Path $PSScriptRoot 'Public\LifecycleCommands.ps1')
-    (Join-Path $PSScriptRoot 'Public\DoctorCommand.ps1')
-
-    # Автодополнение
-    (Join-Path $PSScriptRoot 'Completers\Register-EdtWtCompleters.ps1')
+# Пользовательские настройки IDE: тема, шрифты, цвета, раскладка горячих клавиш,
+# настройки редактора BSL. Всё это Eclipse хранит per-workspace в .prefs-файлах,
+# поэтому каждая новая рабочая область стартует с настройками по умолчанию.
+# Файлы, привязанные к конкретному проекту (инфобазы, публикации, серверы,
+# порты MCP), сюда намеренно не входят.
+$script:EdtWtPortablePrefs = @(
+    'org.eclipse.ui.workbench.prefs'              # шрифты, цвета, горячие клавиши, декораторы
+    'org.eclipse.ui.prefs'
+    'org.eclipse.ui.ide.prefs'
+    'org.eclipse.ui.editors.prefs'
+    'org.eclipse.ui.navigator.prefs'
+    'org.eclipse.ui.genericeditor.prefs'
+    'org.eclipse.e4.ui.css.swt.theme.prefs'       # тема оформления
+    'org.eclipse.e4.ui.workbench.renderers.swt.prefs'
+    'org.eclipse.egit.ui.prefs'
+    'com._1c.g5.v8.dt.theming.ui.prefs'
+    'com._1c.g5.v8.dt.bsl.ui.prefs'               # редактор встроенного языка
+    'com._1c.g5.v8.dt.compare.ui.prefs'
+    'com._1c.g5.v8.dt.navigator.ui.navigator.prefs'
+    'com._1c.g5.v8.dt.right.ql.ui.prefs'
+    'com._1c.g5.v8.dt.ui.language.prefs'
+    'com._1c.g5.v8.dt.ui.validation.prefs'
+    'com.e1c.edt.ai.ui.prefs'
 )
 
-foreach ($file in $loadOrder) {
-    if (Test-Path -LiteralPath $file) {
-        . $file
+# Функции подключаются по маске: список файлов здесь не хранится.
+# Порядок (Private, Public, Completers; внутри - по полному пути) детерминирован;
+# функции вызываются только после загрузки модуля, так что порядок на работу не влияет.
+foreach ($dir in 'Private', 'Public', 'Completers') {
+    $dirPath = Join-Path $PSScriptRoot $dir
+    if (-not (Test-Path -LiteralPath $dirPath)) { continue }
+    foreach ($file in Get-ChildItem -LiteralPath $dirPath -Recurse -File -Filter *.ps1 | Sort-Object FullName) {
+        try {
+            . $file.FullName
+        } catch {
+            $relative = $file.FullName.Substring($PSScriptRoot.Length).TrimStart('\', '/')
+            throw "Не удалось загрузить ${relative}: $($_.Exception.Message)"
+        }
     }
 }
 

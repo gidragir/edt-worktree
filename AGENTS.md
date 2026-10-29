@@ -41,3 +41,7 @@
 - Битый JSON — ошибка «Конфиг повреждён», файл не перезаписывается.
 - Конфиг 2.x мигрирует при первом чтении (`Invoke-EdtWtConfigMigration`), оригинал — `config.json.v2.bak`, `~/.config/1c/projects.json` не трогается. Автодополнение читает конфиг только без миграции и записи.
 - Тесты и любой запуск модуля вне Pester при разработке — только с `EDT_CONFIG_PATH` во временном каталоге; PATH и `Modules` в тестах — через `EDT_PATH_SCOPE=Process` и `EDT_MODULES_DIR`.
+
+## 6. Раскладка модуля
+
+- Одна функция - один файл `src/EdtWorktree/{Public|Private/<Подсистема>}/<Имя>.ps1`; имя файла = имя функции. В `Public/` только экспортируемые функции (совпадают с `FunctionsToExport`); приватные - в `Private/<Подсистема>/` (Config, Git, Eclipse, Process, Workspace, Discovery, Interaction, Install). Код вне функций и `Set-StrictMode` в этих файлах запрещены; переменные модуля - только в `EdtWorktree.psm1`. Файлы подключаются по маске, список в `.psm1` не хранится. Проверяет `Tests/Layout.Tests.ps1`.
