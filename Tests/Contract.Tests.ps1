@@ -55,8 +55,8 @@ Describe 'Контракт модуля' {
         Get-Command 'wt-open', 'edt-wt-open', 'wt-list', 'edt-wt-clean', 'Invoke-EdtWtLegacyCommand' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
     }
 
-    It 'версия модуля 4.0.0' {
-        (Get-Module EdtWorktree).Version.ToString() | Should -Be '4.0.0'
+    It 'версия модуля 4.1.0' {
+        (Get-Module EdtWorktree).Version.ToString() | Should -Be '4.1.0'
     }
 
     It 'у warmup нет ключей кроме ProjectName и общих' {

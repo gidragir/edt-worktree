@@ -3,7 +3,7 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
-## [Unreleased]
+## [4.1.0] - 2026-10-29
 
 ### Changed
 - `edt warmup` сначала подтягивает эталонную ветку клона (fetch и перемотка вперёд с `git.remote`); грязный клон или расхождение с remote - отказ, эталон не трогается. Ключ `-SkipGit` собирает из текущего состояния клона.
