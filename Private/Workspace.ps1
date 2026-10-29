@@ -42,7 +42,10 @@ function New-EdtWtBatch {
             [Parameter(Mandatory)][string[]]$ProjectNames,
             [Parameter(Mandatory)][string]$ResultFile
         )
-        $this.Commands.Add("validate --project-name-list $($ProjectNames -join ',') --file `"$($ResultFile.Replace('\', '/'))`"")
+        # Список - в [] через пробел (1cedtcli -command help validate); через запятую
+        # 1cedtcli ищет один проект с именем "cf,cfe" и падает.
+        $names = ($ProjectNames | ForEach-Object { "`"$_`"" }) -join ' '
+        $this.Commands.Add("validate --file `"$($ResultFile.Replace('\', '/'))`" --project-name-list [$names]")
         return $this
     }
 

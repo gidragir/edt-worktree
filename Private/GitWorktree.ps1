@@ -283,6 +283,13 @@ function Invoke-EdtWtSafeWarmup {
             Remove-Item -LiteralPath $backup -Recurse -Force
         }
     } catch {
+        # Журнал EDT - единственная улика причины сбоя: сохраняется до удаления недособранного эталона.
+        $edtLog = Join-Path $ref '.metadata\.log'
+        if (Test-Path -LiteralPath $edtLog) {
+            $savedLog = "$ref.failed.log"
+            Copy-Item -LiteralPath $edtLog -Destination $savedLog -Force
+            Write-Host "    Журнал EDT сохранён: $savedLog" -ForegroundColor Yellow
+        }
         if (Test-Path -LiteralPath $ref) { Remove-Item -LiteralPath $ref -Recurse -Force }
         if ($moved) {
             Rename-Item -LiteralPath $backup -NewName (Split-Path -Leaf $ref) -Force

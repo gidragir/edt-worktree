@@ -61,7 +61,7 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         $cap.Commands | Should -Contain ('import --project "{0}/src/cfe_a"' -f $script:RepoSlash)
         @($cap.Commands -match 'cfe_b').Count | Should -Be 0
         @($cap.Commands -match 'cfe_gone').Count | Should -Be 0
-        $cap.Commands[-1] | Should -Match '^validate --project-name-list cf,cfe_a '
+        $cap.Commands[-1] | Should -Match '^validate --file ".+" --project-name-list \["cf" "cfe_a"\]$'
         $cap.JvmArgs | Should -Not -Match 'DisableProjectChecks'
         $cap.WorkspaceDir | Should -Be $script:RefDir
         $out | Should -Match '\[skip\].*cfe_gone'
@@ -120,6 +120,18 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         { Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 | Out-Null } | Should -Throw '*boom*'
         Test-Path -LiteralPath (Join-Path $script:RefDir 'marker.txt') | Should -BeTrue
         Test-Path -LiteralPath "$script:RefDir.previous" | Should -BeFalse
+    }
+
+    It 'ошибка сборки сохраняет журнал EDT рядом с эталоном' {
+        Mock -ModuleName EdtWorktree -CommandName Invoke-EdtWtCli -MockWith {
+            New-Item -ItemType Directory -Force -Path (Join-Path $WorkspaceDir '.metadata') | Out-Null
+            Set-Content -LiteralPath (Join-Path $WorkspaceDir '.metadata\.log') -Value 'EDT-ERROR-TRACE'
+            throw 'boom'
+        }
+        $out = & { try { Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 } catch { $_.Exception.Message } } | Out-String
+        $log = Join-Path $script:Wss 'p\_reference.failed.log'
+        Get-Content -LiteralPath $log -Raw | Should -Match 'EDT-ERROR-TRACE'
+        $out | Should -Match ([regex]::Escape($log))
     }
 
     It 'ошибка первой сборки не оставляет недособранный эталон' {

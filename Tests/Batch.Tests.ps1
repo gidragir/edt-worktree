@@ -37,10 +37,12 @@ Describe 'New-EdtWtBatch' {
     }
 
     It 'формирует команду validate со списком проектов' {
+        # Синтаксис из "1cedtcli -command help validate": список в [] через пробел.
+        # Через запятую 1cedtcli ищет один проект с именем "cf,cfe,cfe_mp".
         $b = & $script:NewBatch
         $b.AddValidate(@('cf', 'cfe', 'cfe_mp'), 'D:\ws\result.tsv') | Out-Null
 
-        $b.ToArray()[0] | Should -Be 'validate --project-name-list cf,cfe,cfe_mp --file "D:/ws/result.tsv"'
+        $b.ToArray()[0] | Should -Be 'validate --file "D:/ws/result.tsv" --project-name-list ["cf" "cfe" "cfe_mp"]'
     }
 
     It 'сохраняет порядок команд' {
