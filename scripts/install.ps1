@@ -7,7 +7,7 @@
 
     Скачивает EdtWorktree.zip последнего выпуска и ставит модуль в
     Documents\PowerShell\Modules\EdtWorktree\<версия> (другие версии остаются), снимает
-    старую установку 3.0 (ссылку на клон), ставит shim edt в %LOCALAPPDATA%\EdtWorktree\bin
+    старую установку 3.0 (ссылку на клон), ставит shim edt в %LOCALAPPDATA%\Programs\EdtWorktree\bin
     и показывает проверки окружения. Повторный запуск обновляет установку.
 
     Источники (взаимоисключающие): по умолчанию - выпуск (EDT_RELEASE_URL переопределяет
@@ -52,6 +52,47 @@ function Remove-EdtWtInstallPathEntry {
     $target = & $norm $Entry
     $kept = @($PathValue -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (& $norm $_) -ne $target })
     return ($kept -join ';')
+}
+
+function Test-EdtWtInstallLegacyClone {
+    <# Корень клона установки 3.0: .git и манифест в корне либо (после git pull) в src\EdtWorktree. #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) { return $false }
+    return (Test-Path -LiteralPath (Join-Path $Path 'EdtWorktree.psd1')) -or
+        (Test-Path -LiteralPath (Join-Path $Path 'src\EdtWorktree\EdtWorktree.psd1'))
+}
+
+function Remove-EdtWtInstallLegacyPath {
+    <#
+      Убирает bin клона 3.0 (<клон>\bin и <клон>\src\EdtWorktree\bin) из PATH пользователя
+      (кроме EDT_PATH_SCOPE=Process) и процесса. Клон не трогается. $true - что-то убрано.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$CloneDir)
+
+    # Запись есть, если Add-EdtWtInstallPathEntry возвращает значение без изменений.
+    $has = { param([string]$value, [string]$entry) (Add-EdtWtInstallPathEntry -PathValue $value -Entry $entry) -eq $value }
+    $removed = $false
+    foreach ($bin in @((Join-Path $CloneDir 'bin'), (Join-Path $CloneDir 'src\EdtWorktree\bin'))) {
+        if ($env:EDT_PATH_SCOPE -ne 'Process') {
+            $userPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
+            if (& $has $userPath $bin) {
+                [Environment]::SetEnvironmentVariable('Path', (Remove-EdtWtInstallPathEntry -PathValue $userPath -Entry $bin), 'User')
+                $removed = $true
+            }
+        }
+        $current = [string]$env:Path
+        if (& $has $current $bin) {
+            $env:Path = Remove-EdtWtInstallPathEntry -PathValue $current -Entry $bin
+            $removed = $true
+        }
+    }
+    return $removed
 }
 
 function Get-EdtWtInstallDownload {
@@ -155,7 +196,8 @@ function Install-EdtWorktree {
     if ($sources -gt 1) { throw 'Ключи -ZipPath, -Branch и -Dev взаимоисключающие: укажите один источник.' }
 
     Write-Host '==> Установка EdtWorktree' -ForegroundColor Cyan
-    $ModulesDir = [IO.Path]::GetFullPath($ModulesDir)
+    # Относительный путь - от текущего каталога PowerShell, а не процесса.
+    $ModulesDir = $PSCmdlet.GetUnresolvedProviderPathFromPSPath($ModulesDir)
     $link = Join-Path $ModulesDir 'EdtWorktree'
     $pwsh = (Get-Process -Id $PID).Path
 
@@ -176,6 +218,7 @@ function Install-EdtWorktree {
     }
 
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('edtwt-install-' + [guid]::NewGuid().ToString('N'))
+    $staging = $null
     try {
         # 1. Распаковка zip (выпуск, локальный или архив ветки) во временный каталог.
         $moduleSource = $null
@@ -205,8 +248,13 @@ function Install-EdtWorktree {
                 Where-Object { $_.FullName -like $pattern })
             if ($manifests.Count -ne 1) { throw "В архиве не найден единственный манифест модуля ($pattern): найдено $($manifests.Count)." }
             $moduleSource = $manifests[0].DirectoryName
-            $version = [string](Import-PowerShellDataFile -LiteralPath $manifests[0].FullName).ModuleVersion
-            if (-not $version) { throw "В манифесте $($manifests[0].FullName) нет ModuleVersion." }
+            $rawVersion = [string](Import-PowerShellDataFile -LiteralPath $manifests[0].FullName).ModuleVersion
+            # Версия становится именем каталога, который заменяется рекурсивно: только корректная [version].
+            $parsedVersion = $null
+            if (-not [version]::TryParse($rawVersion, [ref]$parsedVersion) -or $rawVersion.Trim() -ne $parsedVersion.ToString()) {
+                throw "В манифесте $($manifests[0].FullName) некорректная ModuleVersion: '$rawVersion'."
+            }
+            $version = $parsedVersion.ToString()
         }
 
         # 2. Старая ссылка модуля (3.0 или Dev) снимается без рекурсии: цель и клон не трогаются.
@@ -216,17 +264,17 @@ function Install-EdtWorktree {
             $oldTarget = if ($existing.Target) { ([string]@($existing.Target)[0]).TrimEnd('\', '/') } else { $null }
             [IO.Directory]::Delete($link)
             Write-Host "    Ссылка модуля снята: $link"
-            if ($oldTarget -and (Test-Path -LiteralPath (Join-Path $oldTarget '.git')) -and
-                (Test-Path -LiteralPath (Join-Path $oldTarget 'EdtWorktree.psd1'))) {
-                # Корень клона 3.0: его bin был в PATH пользователя.
-                $oldBin = Join-Path $oldTarget 'bin'
-                if ($env:EDT_PATH_SCOPE -ne 'Process') {
-                    $userPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
-                    $newUser = Remove-EdtWtInstallPathEntry -PathValue $userPath -Entry $oldBin
-                    if ($newUser -ne $userPath) { [Environment]::SetEnvironmentVariable('Path', $newUser, 'User') }
-                }
-                $env:Path = Remove-EdtWtInstallPathEntry -PathValue $env:Path -Entry $oldBin
+            if ($oldTarget -and (Test-EdtWtInstallLegacyClone -Path $oldTarget)) {
+                Remove-EdtWtInstallLegacyPath -CloneDir $oldTarget | Out-Null
                 Write-Host "    Старая установка 3.0 снята. Клон $oldTarget больше не нужен модулю, его можно удалить" -ForegroundColor Yellow
+            }
+        } elseif ($existing -and -not $Dev -and (Test-Path -LiteralPath (Join-Path $link 'EdtWorktree.psd1'))) {
+            # Копия модуля от старого установщика (когда ссылку создать не удалось): не удаляем.
+            Write-Host "    ! В $link лежит копия модуля без каталога версии (старый установщик): удалите её вручную и уберите из PATH её старую запись bin." -ForegroundColor Yellow
+            $defaultClone = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'EdtWorktree' } else { $null }
+            if ($defaultClone -and (Test-EdtWtInstallLegacyClone -Path $defaultClone) -and
+                (Remove-EdtWtInstallLegacyPath -CloneDir $defaultClone)) {
+                Write-Host "    Старая установка 3.0 снята. Клон $defaultClone больше не нужен модулю, его можно удалить" -ForegroundColor Yellow
             }
         }
 
@@ -236,9 +284,6 @@ function Install-EdtWorktree {
             $moduleDir = $link
             Write-Host "    Junction: $link -> $devSource" -ForegroundColor Green
         } else {
-            if ((Test-Path -LiteralPath (Join-Path $link 'EdtWorktree.psd1'))) {
-                Write-Host "    ! В $link лежит копия модуля без каталога версии; удалите её вручную." -ForegroundColor Yellow
-            }
             $moduleDir = Join-Path $link $version
             # Копия рядом, затем замена: только каталог этой версии, другие версии остаются.
             $staging = Join-Path $link ('.installing-' + [guid]::NewGuid().ToString('N'))
@@ -273,6 +318,8 @@ function Install-EdtWorktree {
         }
     } finally {
         if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+        # Недоделанная копия (сбой между копированием и переносом) - наш собственный каталог.
+        if ($staging -and (Test-Path -LiteralPath $staging)) { Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
     # 5. Проверки окружения (предупреждения, не ошибки).

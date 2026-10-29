@@ -111,4 +111,30 @@ Describe 'Постоянный shim edt' {
         Install-Shim | Out-Null
         (Test-EdtEnvironment | Where-Object Check -Eq 'shim').Status | Should -Be 'ok'
     }
+
+    It 'каталог shim по умолчанию не лежит в клоне 3.0 (LOCALAPPDATA\EdtWorktree)' {
+        $local = Join-Path $script:UserHome 'AppData\Local'
+        $prevLocal = $env:LOCALAPPDATA
+        $env:LOCALAPPDATA = $local
+        $env:EDT_SHIM_DIR = $null
+        try {
+            $dir = & $script:M { Get-EdtWtShimDir }
+        } finally {
+            $env:LOCALAPPDATA = $prevLocal
+            $env:EDT_SHIM_DIR = $script:ShimDir
+        }
+        $dir | Should -Be (Join-Path $local 'Programs\EdtWorktree\bin')
+        $dir | Should -Not -BeLike ((Join-Path $local 'EdtWorktree') + '\*')
+    }
+
+    It 'Install-EdtWtShim отказывается ставить shim внутрь git-репозитория' {
+        $repo = Join-Path $script:UserHome 'репо с git'
+        New-Item -ItemType Directory -Path (Join-Path $repo '.git'), (Join-Path $repo 'bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'bin\edt.cmd') -Value 'tracked'
+        $env:EDT_SHIM_DIR = Join-Path $repo 'bin'
+        try {
+            { Install-Shim } | Should -Throw '*git*'
+        } finally { $env:EDT_SHIM_DIR = $script:ShimDir }
+        Get-Content -LiteralPath (Join-Path $repo 'bin\edt.cmd') | Should -Be 'tracked'
+    }
 }

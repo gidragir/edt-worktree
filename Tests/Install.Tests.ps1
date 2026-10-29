@@ -104,6 +104,114 @@ Describe 'Install-EdtWorktree из zip' {
         $out | Should -Match ([regex]::Escape($clone))
     }
 
+    It 'клон 3.0 после git pull (src\EdtWorktree) тоже считается старой установкой' {
+        $clone = Join-Path $script:case 'клон 3.0 pulled'
+        New-Item -ItemType Directory -Path (Join-Path $clone '.git'), (Join-Path $clone 'src\EdtWorktree\bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'src\EdtWorktree\EdtWorktree.psd1') -Value '@{}'
+        New-Item -ItemType Directory -Path $mods -Force | Out-Null
+        New-Item -ItemType Junction -Path (Join-Path $mods 'EdtWorktree') -Target $clone | Out-Null
+        $cloneBin = Join-Path $clone 'bin'
+        $env:Path = 'C:\edtwt-test-a;' + $cloneBin
+
+        $out = Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir $mods -NoSetup -NoPath 6>&1 | Out-String
+
+        $env:Path | Should -Be 'C:\edtwt-test-a'
+        $out | Should -Match 'Старая установка 3\.0 снята'
+        Test-Path -LiteralPath (Join-Path $clone 'src\EdtWorktree\EdtWorktree.psd1') | Should -BeTrue
+    }
+
+    It 'shim по умолчанию не попадает в клон 3.0 в LOCALAPPDATA\EdtWorktree' {
+        $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
+        $local = Join-Path $script:case 'AppData\Local'
+        $clone = Join-Path $local 'EdtWorktree'
+        New-Item -ItemType Directory -Path (Join-Path $clone 'bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'EdtWorktree.psd1') -Value '@{}'
+        Set-Content -LiteralPath (Join-Path $clone 'bin\edt.cmd') -Value '@echo old-cmd'
+        Set-Content -LiteralPath (Join-Path $clone 'bin\edt.ps1') -Value '# old-ps1'
+        $gitExe = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+        $noHooks = Join-Path $script:case '.no-hooks'
+        $git = { & $gitExe -c user.name=test -c user.email=test@example.com -c core.autocrlf=false -c commit.gpgsign=false -c "core.hooksPath=$noHooks" -C $clone @args 2>&1 }
+        $null = & $git init -q
+        $null = & $git add -A
+        $null = & $git commit -q -m init
+        Set-Content -LiteralPath (Join-Path $clone 'work.txt') -Value 'x'
+        $cmdBefore = Get-Content -LiteralPath (Join-Path $clone 'bin\edt.cmd') -Raw
+        $ps1Before = Get-Content -LiteralPath (Join-Path $clone 'bin\edt.ps1') -Raw
+        New-Item -ItemType Directory -Path $mods -Force | Out-Null
+        New-Item -ItemType Junction -Path (Join-Path $mods 'EdtWorktree') -Target $clone | Out-Null
+
+        $prevLocal = $env:LOCALAPPDATA
+        $prevShim = $env:EDT_SHIM_DIR
+        $env:LOCALAPPDATA = $local
+        $env:EDT_SHIM_DIR = $null
+        try {
+            Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir $mods -NoSetup 6>$null
+        } finally {
+            $env:LOCALAPPDATA = $prevLocal
+            $env:EDT_SHIM_DIR = $prevShim
+        }
+
+        (& $gitExe -C $clone status --porcelain 2>$null) | Should -Be '?? work.txt'
+        Get-Content -LiteralPath (Join-Path $clone 'bin\edt.cmd') -Raw | Should -BeExactly $cmdBefore
+        Get-Content -LiteralPath (Join-Path $clone 'bin\edt.ps1') -Raw | Should -BeExactly $ps1Before
+        Test-Path -LiteralPath (Join-Path $local 'Programs\EdtWorktree\bin\edt.cmd') | Should -BeTrue
+    }
+
+    It 'копия модуля без каталога версии: не удаляется, подсказка про PATH, bin клона 3.0 снимается' {
+        $local = Join-Path $script:case 'AppData\Local'
+        $clone = Join-Path $local 'EdtWorktree'
+        New-Item -ItemType Directory -Path (Join-Path $clone '.git'), (Join-Path $clone 'bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clone 'EdtWorktree.psd1') -Value '@{}'
+        $flat = Join-Path $mods 'EdtWorktree'
+        New-Item -ItemType Directory -Path $flat -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $flat 'EdtWorktree.psd1') -Value '@{}'
+        $cloneBin = Join-Path $clone 'bin'
+        $env:Path = 'C:\edtwt-test-a;' + $cloneBin
+
+        $prevLocal = $env:LOCALAPPDATA
+        $env:LOCALAPPDATA = $local
+        try {
+            $out = Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir $mods -NoSetup -NoPath 6>&1 | Out-String
+        } finally { $env:LOCALAPPDATA = $prevLocal }
+
+        Test-Path -LiteralPath (Join-Path $flat 'EdtWorktree.psd1') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $flat "$($script:Version)\EdtWorktree.psd1") | Should -BeTrue
+        $out | Should -Match 'копия модуля'
+        $out | Should -Match 'PATH'
+        $out | Should -Match 'Старая установка 3\.0 снята'
+        $env:Path | Should -Be 'C:\edtwt-test-a'
+        Test-Path -LiteralPath (Join-Path $clone 'EdtWorktree.psd1') | Should -BeTrue
+    }
+
+    It 'версия из манифеста проверяется до использования в пути' {
+        $evil = Join-Path $script:case 'evil'
+        $evilModule = Join-Path $evil 'EdtWorktree\9.9.9'
+        New-Item -ItemType Directory -Path $evilModule -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $evilModule 'EdtWorktree.psd1') -Value "@{ ModuleVersion = '..\..\..' }"
+        $evilZip = Join-Path $script:case 'evil.zip'
+        [IO.Compression.ZipFile]::CreateFromDirectory($evil, $evilZip)
+        $sentinel = Join-Path $mods 'Other\keep.txt'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $sentinel) -Force | Out-Null
+        Set-Content -LiteralPath $sentinel -Value 'x'
+
+        { Install-EdtWorktree -ZipPath $evilZip -ModulesDir $mods -NoSetup -NoPath 6>$null } | Should -Throw '*ModuleVersion*'
+        Test-Path -LiteralPath $sentinel | Should -BeTrue
+    }
+
+    It 'при ошибке копирования не оставляет каталог .installing' {
+        Mock Move-Item { throw 'сбой переноса' }
+        { Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir $mods -NoSetup -NoPath 6>$null } | Should -Throw '*сбой переноса*'
+        @(Get-ChildItem -LiteralPath (Join-Path $mods 'EdtWorktree') -Force -Filter '.installing-*').Count | Should -Be 0
+    }
+
+    It 'относительный -ModulesDir считается от текущего каталога PowerShell' {
+        Push-Location -LiteralPath $script:case
+        try {
+            Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir 'отн Modules' -NoSetup -NoPath 6>$null
+        } finally { Pop-Location }
+        Test-Path -LiteralPath (Join-Path $script:case "отн Modules\EdtWorktree\$($script:Version)\EdtWorktree.psd1") | Should -BeTrue
+    }
+
     It 'ставит shim, если не задан -NoPath' {
         $env:EDT_PATH_SCOPE | Should -BeExactly 'Process'
         Install-EdtWorktree -ZipPath $script:Build.ZipPath -ModulesDir $mods -NoSetup 6>$null

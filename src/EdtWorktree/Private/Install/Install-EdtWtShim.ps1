@@ -10,6 +10,16 @@
     param([switch]$NoPath)
 
     $dir = Get-EdtWtShimDir
+    # Shim не кладётся внутрь git-репозитория (например, клона 3.0): иначе он перезапишет
+    # отслеживаемые файлы и исчезнет вместе с клоном.
+    $probe = [IO.Path]::GetFullPath($dir)
+    while ($probe) {
+        if (Test-Path -LiteralPath (Join-Path $probe '.git')) {
+            throw "Каталог shim $dir лежит внутри git-репозитория $probe. Укажите другой каталог в EDT_SHIM_DIR."
+        }
+        $probe = Split-Path -Parent $probe
+    }
+
     $template = Join-Path $script:EdtWtModuleRoot 'bin\shim'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     foreach ($name in 'edt.cmd', 'edt.ps1') {
