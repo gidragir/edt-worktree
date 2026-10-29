@@ -31,7 +31,7 @@ irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install
 1. клонирует репозиторий в `%LOCALAPPDATA%\EdtWorktree`;
 2. создаёт ссылку модуля `Documents\PowerShell\Modules\EdtWorktree`;
 3. добавляет каталог `bin` в PATH пользователя (команда `edt` работает в pwsh,
-   cmd, bash и nushell через `bin\edt.cmd`);
+   cmd, bash и nushell через `src\EdtWorktree\bin\edt.cmd`);
 4. показывает проверки окружения: pwsh, git, 1C:EDT, JDK 17 с JavaFX;
 5. в интерактивном сеансе без конфига запускает `edt setup`.
 
@@ -106,7 +106,7 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 | `edt uninstall [-Purge]` | Удалить модуль |
 
 Ключи пишутся как `-NoGui` или `--no-gui`. Изменяющие команды понимают `-WhatIf`
-(`--dry-run`) и `-Yes` (без вопросов). Коды возврата `bin\edt.ps1`: 0 успех,
+(`--dry-run`) и `-Yes` (без вопросов). Коды возврата `src\EdtWorktree\bin\edt.ps1`: 0 успех,
 1 сбой (у `doctor` - найдена ошибка), 2 ошибка вызова; для `vr` код vrunner
 отдаётся как есть.
 
@@ -222,7 +222,7 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 - Правила для кода (кодировка UTF-8 с BOM, git только через `Invoke-EdtWtGit`,
   кавычки в `Start-Process`, формат `.location`) - в [AGENTS.md](AGENTS.md).
 - Новая подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в
-  `bin/edt.ps1`, `Completers`, `Show-EdtWtUsage`, README, COMMANDS.md и
+  `src/EdtWorktree/bin/edt.ps1`, `Completers`, `Show-EdtWtUsage`, README, COMMANDS.md и
   `Tests/Contract.Tests.ps1`. Новая публичная функция - ещё и в
   `FunctionsToExport` в `src/EdtWorktree/EdtWorktree.psd1`.
 
@@ -230,7 +230,7 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 - `scripts/install.ps1` - установщик (самодостаточный, работает под `irm | iex`).
 - `src/EdtWorktree/EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
-- `src/EdtWorktree/bin/edt.ps1`, `bin/edt.cmd` - вход для любых оболочек и планировщика.
+- `src/EdtWorktree/bin/edt.ps1`, `src/EdtWorktree/bin/edt.cmd` - вход для любых оболочек и планировщика.
 - `src/EdtWorktree/Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),
   `ProjectCommands`, `ConfigCommands` (setup, config), `DoctorCommand`,
   `LifecycleCommands` (update, self-update, uninstall), `Invoke-EdtCommand`

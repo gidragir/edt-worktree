@@ -252,7 +252,7 @@ Get-Help Invoke-EdtWorktreeOpen -Full
 ```
 
 ## Запуск извне
-Из cmd, bash, nushell или агента: bin\edt.cmd в PATH
+Из cmd, bash, nushell или агента: src\EdtWorktree\bin\edt.cmd в PATH
 ```snippet-template
 edt open $project $branch -NoGui
 ```
@@ -260,13 +260,13 @@ edt open $project $branch -NoGui
 ## Ночная подготовка
 Команда для задания планировщика: обновляет все эталоны
 ```snippet-template
-pwsh -NoProfile -File "$env:LOCALAPPDATA\EdtWorktree\bin\edt.ps1" update -Yes
+pwsh -NoProfile -File "$env:LOCALAPPDATA\EdtWorktree\src\EdtWorktree\bin\edt.ps1" update -Yes
 ```
 
 ## Создать задание
 Регистрирует ежедневное обновление эталонов в три часа
 ```snippet-template
-Register-ScheduledTask -TaskName "EDT update" -Action (New-ScheduledTaskAction -Execute pwsh.exe -Argument ('-NoProfile -File "' + "$env:LOCALAPPDATA\EdtWorktree\bin\edt.ps1" + '" update -Yes')) -Trigger (New-ScheduledTaskTrigger -Daily -At 03:00) -Settings (New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 4))
+Register-ScheduledTask -TaskName "EDT update" -Action (New-ScheduledTaskAction -Execute pwsh.exe -Argument ('-NoProfile -File "' + "$env:LOCALAPPDATA\EdtWorktree\src\EdtWorktree\bin\edt.ps1" + '" update -Yes')) -Trigger (New-ScheduledTaskTrigger -Daily -At 03:00) -Settings (New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 4))
 ```
 
 ## Проверки модуля
