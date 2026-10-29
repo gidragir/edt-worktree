@@ -20,46 +20,82 @@
 
 ## Установка
 
-В PowerShell 7:
+Основной способ - PowerShell Gallery (PowerShell 7):
 
 ```powershell
-irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1 | iex
+Install-PSResource EdtWorktree
+edt setup
+```
+
+Альтернатива - одна команда: скачивает zip выпуска GitHub, ставит модуль в
+`Documents\PowerShell\Modules\EdtWorktree\<версия>` и shim `edt`:
+
+```powershell
+irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1 | iex
 ```
 
 Установщик:
 
-1. клонирует репозиторий в `%LOCALAPPDATA%\EdtWorktree`;
-2. создаёт ссылку модуля `Documents\PowerShell\Modules\EdtWorktree`;
-3. добавляет каталог `bin` в PATH пользователя (команда `edt` работает в pwsh,
-   cmd, bash и nushell через `src\EdtWorktree\bin\edt.cmd`);
-4. показывает проверки окружения: pwsh, git, 1C:EDT, JDK 17 с JavaFX;
-5. в интерактивном сеансе без конфига запускает `edt setup`.
+1. ставит модуль в `Documents\PowerShell\Modules\EdtWorktree\<версия>` (другие
+   версии остаются рядом);
+2. ставит постоянный shim `edt` (`edt.cmd` и `edt.ps1`) в
+   `%LOCALAPPDATA%\Programs\EdtWorktree\bin` и добавляет этот каталог в PATH
+   пользователя; shim берёт наибольшую установленную версию модуля, поэтому PATH
+   не меняется при обновлении;
+3. показывает проверки окружения: pwsh, git, 1C:EDT, JDK 17 с JavaFX;
+4. в интерактивном сеансе без конфига запускает `edt setup`.
 
-Повторный запуск обновляет установку и не дублирует запись в PATH.
+Повторный запуск обновляет установку и не дублирует запись в PATH. git для
+установки не нужен (он нужен для работы `edt`).
 
-С параметрами (без автозапуска `edt setup`, другой каталог или ветка):
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1))) -NoSetup -InstallDir D:\tools\EdtWorktree
-```
-
-Ключи: `-InstallDir`, `-Branch`, `-NoSetup`, `-NoPath` (не менять PATH).
-
-Под `irm | iex` то же задаётся переменными окружения `EDT_INSTALL_DIR`,
-`EDT_INSTALL_BRANCH`, `EDT_INSTALL_NOSETUP=1`.
-
-Из своего клона (режим разработчика): `pwsh -NoProfile -File scripts/install.ps1`.
-Ссылка модуля будет указывать на этот клон.
-
-Ручная установка из ZIP: распакуйте архив, снимите пометку «скачано из
-интернета», иначе PowerShell откажется загружать скрипты, и запустите установщик:
+С параметрами (без автозапуска `edt setup`, ветка, локальный zip):
 
 ```powershell
-Get-ChildItem -Recurse D:\tools\edt-worktree | Unblock-File
-pwsh -NoProfile -File D:\tools\edt-worktree\scripts\install.ps1
+& ([scriptblock]::Create((irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1))) -NoSetup
 ```
 
-Без git `edt self-update` в такой установке не работает.
+Ключи: `-ZipPath` (локальный zip), `-Branch` (архив ветки GitHub, для проверки
+правки до выпуска), `-Dev` (ссылка на клон разработчика, см. ниже), `-NoSetup`,
+`-NoPath` (не менять PATH). Под `irm | iex` то же задаётся переменными
+окружения `EDT_INSTALL_ZIP`, `EDT_INSTALL_BRANCH`, `EDT_INSTALL_DEV=1`,
+`EDT_INSTALL_NOSETUP=1`.
+
+Из ветки (для проверки до выпуска):
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1))) -Branch feature/my-fix
+```
+
+Ручная установка из ZIP: скачайте `EdtWorktree.zip` и `install.ps1` из
+[Releases](https://github.com/gidragir/edt-worktree/releases), снимите пометку
+«скачано из интернета», иначе PowerShell откажется загружать скрипты, и
+запустите установщик:
+
+```powershell
+Unblock-File D:\tools\install.ps1, D:\tools\EdtWorktree.zip
+pwsh -NoProfile -File D:\tools\install.ps1 -ZipPath D:\tools\EdtWorktree.zip
+```
+
+### edt для cmd, nushell и агентов
+
+Команда `edt` работает вне pwsh через shim: `edt setup` ставит его, если его
+нет (установщик делает то же), и добавляет каталог shim в PATH. После этого
+`edt open my-project TASK-123 -NoGui` вызывается из cmd, bash, nushell,
+планировщика и агентов. `edt doctor` проверяет shim и PATH.
+
+### Обновление с 3.0
+
+В 3.0 модуль ставился клоном репозитория в `%LOCALAPPDATA%\EdtWorktree`.
+`edt self-update` из 3.0 новый модуль не ставит (он делает `git pull` в клоне),
+поэтому обновитесь одной командой установки:
+
+```powershell
+irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1 | iex
+```
+
+или `Install-PSResource EdtWorktree`, а затем `edt setup`. Установщик снимает
+ссылку модуля 3.0 и старый `bin` в PATH, ставит shim. Клон, конфиг, проекты,
+worktree и рабочие области не трогаются; клон можно удалить вручную.
 
 ## Первые шаги
 
@@ -102,8 +138,8 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 | `edt vr <аргументы vrunner>` | vrunner с рабочей областью текущего worktree |
 | `edt doctor` | Проверка окружения и проектов; у каждой проблемы - команда исправления |
 | `edt config [show\|path\|set <ключ> <значение>]` | Показать настройки, путь к файлу, изменить ключ |
-| `edt self-update` | Обновить модуль (`git pull --ff-only` в каталоге установки) |
-| `edt uninstall [-Purge]` | Удалить модуль |
+| `edt self-update` | Обновить модуль способом, подходящим виду установки (см. «Обновление и удаление») |
+| `edt uninstall [-Purge]` | Удалить модуль и shim |
 
 Ключи пишутся как `-NoGui` или `--no-gui`. Изменяющие команды понимают `-WhatIf`
 (`--dry-run`) и `-Yes` (без вопросов). Коды возврата `src\EdtWorktree\bin\edt.ps1`: 0 успех,
@@ -183,12 +219,22 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 ## Обновление и удаление
 
-- `edt self-update` - обновить модуль из его git-репозитория. Повторный запуск
-  строки установки делает то же.
-- `edt uninstall` - удалить ссылку модуля и `bin` из PATH пользователя. Конфиг,
-  клоны, worktree и рабочие области остаются.
-- `edt uninstall -Purge` - ещё и каталог установки и конфиг. Каталог установки с
-  незакоммиченными правками не удаляется (будет предупреждение).
+`edt self-update` и `edt uninstall` определяют вид установки (`edt doctor`
+показывает его) и действуют по-своему:
+
+| Вид | Как установлен | `edt self-update` | `edt uninstall` |
+|---|---|---|---|
+| Gallery | `Install-PSResource EdtWorktree` | `Update-PSResource` (или `Update-Module`), модуль перезагружается в сессии | `Uninstall-PSResource` всех версий, shim и запись PATH |
+| Zip | установщик из выпуска GitHub | скачивает `install.ps1` последнего выпуска и запускает с `-NoSetup` | удаляет каталог модуля, shim и запись PATH |
+| Dev | `scripts/install.ps1 -Dev` | `git pull --ff-only` в клоне разработчика | снимает ссылку модуля, shim и запись PATH |
+| Legacy | клон 3.0 в `%LOCALAPPDATA%\EdtWorktree` | не обновляет, предлагает переустановку: команда установки из «Обновление с 3.0» | снимает ссылку модуля и `bin` клона из PATH |
+
+- `edt uninstall -Purge` - ещё и конфиг (`%APPDATA%\EdtWorktree`) и для Dev и
+  Legacy клон. Клон с незакоммиченными правками не удаляется (будет
+  предупреждение).
+- Клоны проектов, worktree и рабочие области не затрагиваются ни при обновлении,
+  ни при удалении.
+- Повторный запуск команды установки обновляет любую установку, кроме Dev.
 
 ## Решение проблем
 
@@ -213,12 +259,31 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 ## Для разработчиков модуля
 
+- Режим разработчика: из клона `pwsh -NoProfile -File scripts/install.ps1 -Dev`.
+  Ссылка модуля `Documents\PowerShell\Modules\EdtWorktree` будет указывать на
+  `src\EdtWorktree` клона, shim ставится как обычно. Если модуль уже установлен
+  из Gallery или zip, сначала `edt uninstall`.
 - Проверки перед коммитом: `pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1`
   (Pester 5 и PSScriptAnalyzer). Нужен Pester 5:
   `Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck`.
-- Тесты не трогают реальный конфиг, PATH и `Documents\PowerShell\Modules`:
-  `EDT_CONFIG_PATH`, `EDT_MODULES_DIR`, `EDT_PATH_SCOPE=Process` направляют их во
-  временный каталог (см. `Tests/TestHelpers.ps1`).
+- Сборка: `pwsh -NoProfile -File scripts/build.ps1` собирает однофайловый модуль
+  `out/EdtWorktree/<версия>/`, `out/EdtWorktree.zip` и `out/install.ps1`. Проверки
+  над собранным модулем:
+  `pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1 -SkipAnalyzer -ModulePath out/EdtWorktree/<версия>/EdtWorktree.psd1`.
+- Тесты не трогают реальный конфиг, PATH, shim и `Documents\PowerShell\Modules`:
+  `EDT_CONFIG_PATH`, `EDT_MODULES_DIR`, `EDT_SHIM_DIR`, `EDT_PATH_SCOPE=Process`
+  направляют их во временный каталог (см. `Tests/TestHelpers.ps1`). Установщик
+  локально не запускайте: он пишет в настоящие Modules и PATH.
+- Выпуск делает только CI. В `CHANGELOG.md` раздел `[Unreleased]` переименовывается
+  в `## [<версия>] - <дата>`, `ModuleVersion` в манифесте поднимается, затем
+  ставится тег `vX.Y.Z` (совпадающий с `ModuleVersion`) и пушится.
+  `.github/workflows/release.yml` прогоняет проверки, собирает выпуск с
+  `build.ps1 -Release`, публикует модуль в PowerShell Gallery
+  (`Publish-PSResource`) и только потом создаёт GitHub Release с
+  `EdtWorktree.zip` и `install.ps1`. Нужен секрет репозитория
+  `PSGALLERY_API_KEY` (ключ PowerShell Gallery с правом публикации
+  `EdtWorktree`). Публикация в Gallery необратима: версию нельзя ни заменить, ни
+  вернуть, только выпустить следующую.
 - Правила для кода (кодировка UTF-8 с BOM, git только через `Invoke-EdtWtGit`,
   кавычки в `Start-Process`, формат `.location`) - в [AGENTS.md](AGENTS.md).
 - Новая подкоманда добавляется в: `ValidateSet` в `Invoke-EdtCommand`, `$known` в
@@ -228,7 +293,9 @@ edt open my-project TASK-123    # worktree feature/TASK-123, рабочая об
 
 ### Карта файлов
 
-- `scripts/install.ps1` - установщик (самодостаточный, работает под `irm | iex`).
+- `scripts/install.ps1` - установщик (самодостаточный, работает под `irm | iex`; в выпуск попадает как `install.ps1`).
+- `scripts/build.ps1` - сборка выпуска; `scripts/Invoke-EdtWtChecks.ps1` - тесты и анализатор.
+- `.github/workflows/` - `checks.yml` (проверки) и `release.yml` (выпуск по тегу).
 - `src/EdtWorktree/EdtWorktree.psm1` - загрузка Private, Public, Completers; алиас `edt`.
 - `src/EdtWorktree/bin/edt.ps1`, `src/EdtWorktree/bin/edt.cmd` - вход для любых оболочек и планировщика.
 - `src/EdtWorktree/Public/` - команды: `WorktreeCommands` (open, warmup, add, remove, status),

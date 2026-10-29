@@ -6,9 +6,15 @@
 `$extension` — имя папки расширения (`cfe_ad`) или путь относительно клона.
 
 ## Установить
-Ставит модуль, добавляет edt в PATH и запускает мастер настройки
+Ставит модуль из zip выпуска GitHub и shim edt в PATH, запускает мастер настройки
 ```snippet-template
-irm https://raw.githubusercontent.com/gidragir/edt-worktree/main/scripts/install.ps1 | iex
+irm https://github.com/gidragir/edt-worktree/releases/latest/download/install.ps1 | iex
+```
+
+## Установить из PowerShell Gallery
+Основной способ; shim и PATH настраивает затем `edt setup`
+```snippet-template
+Install-PSResource EdtWorktree
 ```
 
 ## Первичная настройка
@@ -222,19 +228,19 @@ edt config set edt.vm_path "C:\Program Files\Zulu\zulu-17\bin\server\jvm.dll"
 ```
 
 ## Обновление модуля
-Обновляет модуль из Git-репозитория и перезагружает в сессии
+По виду установки: Gallery - Update-PSResource, Zip - установщик последнего выпуска, Dev - git pull в клоне разработчика; установку 3.0 (Legacy) не обновляет, а предлагает переустановку командой «Установить»
 ```snippet-template
 edt self-update
 ```
 
 ## Удалить модуль
-Убирает ссылку модуля и bin из PATH; конфиг, клоны и области остаются
+Убирает модуль (Gallery - все версии; Zip - каталог модуля; Dev и Legacy - ссылку) и shim из PATH; конфиг, клоны и области остаются
 ```snippet-template
 edt uninstall
 ```
 
 ## Удалить полностью
-Ещё и каталог установки с конфигом
+Ещё и конфиг; для Dev и Legacy ещё и клон, если в нём нет незакоммиченных правок
 ```snippet-template
 edt uninstall -Purge
 ```
@@ -252,7 +258,7 @@ Get-Help Invoke-EdtWorktreeOpen -Full
 ```
 
 ## Запуск извне
-Из cmd, bash, nushell или агента: src\EdtWorktree\bin\edt.cmd в PATH
+Из cmd, bash, nushell или агента: shim edt.cmd из %LOCALAPPDATA%\Programs\EdtWorktree\bin в PATH (ставит edt setup)
 ```snippet-template
 edt open $project $branch -NoGui
 ```
@@ -260,13 +266,13 @@ edt open $project $branch -NoGui
 ## Ночная подготовка
 Команда для задания планировщика: обновляет все эталоны
 ```snippet-template
-pwsh -NoProfile -File "$env:LOCALAPPDATA\EdtWorktree\src\EdtWorktree\bin\edt.ps1" update -Yes
+pwsh -NoProfile -File "$env:LOCALAPPDATA\Programs\EdtWorktree\bin\edt.ps1" update -Yes
 ```
 
 ## Создать задание
 Регистрирует ежедневное обновление эталонов в три часа
 ```snippet-template
-Register-ScheduledTask -TaskName "EDT update" -Action (New-ScheduledTaskAction -Execute pwsh.exe -Argument ('-NoProfile -File "' + "$env:LOCALAPPDATA\EdtWorktree\src\EdtWorktree\bin\edt.ps1" + '" update -Yes')) -Trigger (New-ScheduledTaskTrigger -Daily -At 03:00) -Settings (New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 4))
+Register-ScheduledTask -TaskName "EDT update" -Action (New-ScheduledTaskAction -Execute pwsh.exe -Argument ('-NoProfile -File "' + "$env:LOCALAPPDATA\Programs\EdtWorktree\bin\edt.ps1" + '" update -Yes')) -Trigger (New-ScheduledTaskTrigger -Daily -At 03:00) -Settings (New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 4))
 ```
 
 ## Проверки модуля

@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'EdtWorktree.psm1'
-    ModuleVersion     = '3.0.0'
+    ModuleVersion     = '4.0.0'
     GUID              = '8f3b6f41-9d8a-4f2e-9a7c-2c6d1b5a4e10'
     Author            = 'Balter'
     Description       = 'Управление рабочими областями 1C:EDT для git worktree: прогрев эталона, клонирование, синхронизация, запуск IDE.'

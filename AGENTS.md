@@ -46,3 +46,11 @@
 ## 6. Раскладка модуля
 
 - Одна функция - один файл `src/EdtWorktree/{Public|Private/<Подсистема>}/<Имя>.ps1`; имя файла = имя функции. В `Public/` только экспортируемые функции (совпадают с `FunctionsToExport`); приватные - в `Private/<Подсистема>/` (Config, Git, Eclipse, Process, Workspace, Discovery, Interaction, Install). Код вне функций и `Set-StrictMode` в этих файлах запрещены; переменные модуля - только в `EdtWorktree.psm1`. Файлы подключаются по маске, список в `.psm1` не хранится. Проверяет `Tests/Layout.Tests.ps1`.
+
+## 7. Раскладка репозитория, shim и выпуск
+
+- Репозиторий: `src/EdtWorktree/` - модуль (манифест, `Public/`, `Private/`, `Completers/`, `bin/`, `bin/shim/`); `scripts/` - `install.ps1` (установщик, самодостаточный), `build.ps1` (сборка выпуска в `out/`), `Invoke-EdtWtChecks.ps1`; `Tests/` - Pester 5; `.github/workflows/` - `checks.yml` и `release.yml`.
+- В PATH пользователя попадает только каталог постоянного shim `%LOCALAPPDATA%\Programs\EdtWorktree\bin` (`edt.cmd`, `edt.ps1`), а не `bin` клона или каталог версии модуля: shim берёт наибольшую установленную версию. Каталог 3.0 `%LOCALAPPDATA%\EdtWorktree` (клон) занят старой установкой, shim туда и внутрь любого git-репозитория не ставится. Статус shim в `edt doctor` - `ok`/`warn`.
+- Виды установки: Gallery, Zip, Dev, Legacy (3.0). `self-update` и `uninstall` действуют по виду; конфиг, клоны проектов, worktree и рабочие области не трогаются (конфиг - только `uninstall -Purge`).
+- Выпуск делает только CI по тегу `vX.Y.Z`, совпадающему с `ModuleVersion` (`release.yml`: проверки, `build.ps1 -Release`, `Publish-PSResource`, затем GitHub Release). Не ставить теги, не пушить и не публиковать в Gallery вручную без прямого указания пользователя: публикация необратима, нужен секрет `PSGALLERY_API_KEY`.
+- Локально установщик не запускать (он пишет в настоящие `Documents\PowerShell\Modules` и PATH); его тесты используют `EDT_MODULES_DIR`, `EDT_SHIM_DIR`, `EDT_PATH_SCOPE=Process`.

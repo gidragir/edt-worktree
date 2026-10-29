@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pester 5 и PSScriptAnalyzer
+        run: |
+          Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Тесты и анализатор над src
+        run: pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1
+
+      - name: Версия тега совпадает с ModuleVersion
+        run: |
+          $version = (Import-PowerShellDataFile src/EdtWorktree/EdtWorktree.psd1).ModuleVersion
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Тег $env:GITHUB_REF_NAME не совпадает с ModuleVersion $version в манифесте."
+          }
+
+      - name: Сборка выпуска
+        run: pwsh -NoProfile -File scripts/build.ps1 -Release
+
+      - name: Тесты над собранным модулем
+        run: |
+          $version = (Import-PowerShellDataFile src/EdtWorktree/EdtWorktree.psd1).ModuleVersion
+          pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1 -SkipAnalyzer -ModulePath "out/EdtWorktree/$version/EdtWorktree.psd1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Установщик из zip в чистом профиле
+        run: |
+          $env:EDT_INSTALL_NOSETUP = '1'
+          ./scripts/install.ps1 -ZipPath out/EdtWorktree.zip
+          pwsh -NoProfile -Command "edt help"
+
+      # Публикация в Gallery идёт перед созданием Release: если Gallery отказала,
+      # Release не создаётся. Публикация необратима.
+      - name: Публикация в PowerShell Gallery
+        run: |
+          $version = (Import-PowerShellDataFile src/EdtWorktree/EdtWorktree.psd1).ModuleVersion
+          Publish-PSResource -Path "out/EdtWorktree/$version" -Repository PSGallery -ApiKey ${{ secrets.PSGALLERY_API_KEY }}
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME out/EdtWorktree.zip out/install.ps1 --title $env:GITHUB_REF_NAME --notes-file out/release-notes.md

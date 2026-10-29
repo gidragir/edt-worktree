@@ -18,11 +18,28 @@ jobs:
           Install-Module Pester -MinimumVersion 5 -Scope CurrentUser -Force -SkipPublisherCheck
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 
-      - name: Тесты и анализатор
+      - name: Тесты и анализатор над src
         run: pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1
 
-      - name: Установщик в чистом профиле
+      - name: Сборка
+        run: pwsh -NoProfile -File scripts/build.ps1
+
+      - name: Тесты над собранным модулем
+        run: |
+          $version = (Import-PowerShellDataFile src/EdtWorktree/EdtWorktree.psd1).ModuleVersion
+          pwsh -NoProfile -File scripts/Invoke-EdtWtChecks.ps1 -SkipAnalyzer -ModulePath "out/EdtWorktree/$version/EdtWorktree.psd1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Установщик из zip в чистом профиле
         run: |
           $env:EDT_INSTALL_NOSETUP = '1'
-          ./scripts/install.ps1
-          edt help
+          ./scripts/install.ps1 -ZipPath out/EdtWorktree.zip
+
+      - name: edt в новом pwsh
+        run: pwsh -NoProfile -Command "edt help"
+
+      - name: edt через shim из cmd
+        shell: cmd
+        run: |
+          set "PATH=%LOCALAPPDATA%\Programs\EdtWorktree\bin;%PATH%"
+          cmd /c edt help
