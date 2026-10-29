@@ -59,8 +59,14 @@ function Enter-EdtWtTestConfig {
         Path       = $null
         PrevConfig = $env:EDT_CONFIG_PATH
         PrevLegacy = $env:EDT_LEGACY_CONFIG_PATH
+        PrevShim   = $env:EDT_SHIM_DIR
+        PrevScope  = $env:EDT_PATH_SCOPE
+        PrevPath   = $env:Path
     }
     $state.Path = Use-EdtWtTestConfig -Root $state.Root
+    # Setup ставит shim: он не должен попасть в реальный LOCALAPPDATA и PATH пользователя.
+    $env:EDT_SHIM_DIR = Join-Path $state.Root 'shim-bin'
+    $env:EDT_PATH_SCOPE = 'Process'
     return $state
 }
 
@@ -71,6 +77,9 @@ function Exit-EdtWtTestConfig {
 
     $env:EDT_CONFIG_PATH = $State.PrevConfig
     $env:EDT_LEGACY_CONFIG_PATH = $State.PrevLegacy
+    $env:EDT_SHIM_DIR = $State.PrevShim
+    $env:EDT_PATH_SCOPE = $State.PrevScope
+    $env:Path = $State.PrevPath
     if (Test-Path -LiteralPath $State.Root) {
         Remove-Item -LiteralPath $State.Root -Recurse -Force -ErrorAction SilentlyContinue
     }

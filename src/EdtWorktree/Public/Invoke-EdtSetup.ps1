@@ -80,5 +80,10 @@
         }
     }
 
+    if ($PSCmdlet.ShouldProcess((Get-EdtWtShimDir), 'Установить shim edt')) {
+        $shimDir = Install-EdtWtShim
+        Write-Host "✓ Shim edt (nushell, cmd, планировщик): $shimDir" -ForegroundColor Green
+    }
+
     return (Get-EdtConfig)
 }

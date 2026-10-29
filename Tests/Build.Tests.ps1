@@ -21,7 +21,7 @@ Describe 'Сборка модуля' {
         $ps1 = @(Get-ChildItem -LiteralPath $script:Result.ModuleDir -Recurse -File |
             Where-Object { $_.Extension -eq '.ps1' } |
             ForEach-Object { $_.FullName.Substring($script:Result.ModuleDir.Length).TrimStart('\') })
-        $ps1 | Should -Be @('bin\edt.ps1')
+        $ps1 | Should -Be @('bin\edt.ps1', 'bin\shim\edt.ps1')
         Test-Path -LiteralPath (Join-Path $script:Result.ModuleDir 'Public') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $script:Result.ModuleDir 'Private') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $script:Result.ModuleDir 'EdtWorktree.format.ps1xml') | Should -BeTrue

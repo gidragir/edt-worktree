@@ -38,6 +38,10 @@
     if ($git) { & $add 'git в PATH' 'ok' $git.Source }
     else { & $add 'git в PATH' 'error' 'git не найден' 'winget install Git.Git' }
 
+    # Постоянный shim для nushell, cmd, планировщика
+    if (Test-EdtWtShim) { & $add 'shim' 'ok' (Get-EdtWtShimDir) }
+    else { & $add 'shim' 'warn' "Shim edt для других оболочек не установлен: $(Get-EdtWtShimDir)" 'edt setup' }
+
     # EDT
     $edtCli = $null
     $edtDetail = ''
