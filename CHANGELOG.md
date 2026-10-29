@@ -8,6 +8,7 @@
 ### Changed
 - Модуль перенесён в `src/EdtWorktree/`, одна функция — один файл (`Public/`, `Private/`, `Completers/`).
 - Манифест: `CompatiblePSEditions`, `Copyright`, `ProjectUri`, `LicenseUri`, `ReleaseNotes`, теги `Windows` и `PSEdition_Core`.
+- Установщик `scripts/install.ps1` ставит модуль из zip выпуска в `Modules\EdtWorktree\<версия>` (другие версии остаются), из локального zip (`-ZipPath`, `EDT_INSTALL_ZIP`), архива ветки (`-Branch`) или ссылкой на клон разработчика (`-Dev`, `EDT_INSTALL_DEV`) и ставит shim `edt`. Ссылка старой установки 3.0 и её `bin` в PATH снимаются, клон не трогается. git для установки больше не нужен; `-InstallDir`, `-RepoUrl` и `EDT_INSTALL_DIR` удалены.
 
 ### Added
 - Постоянный shim `edt` в `%LOCALAPPDATA%\EdtWorktree\bin` (`edt.cmd` и запускатель `edt.ps1`): не зависит от версии модуля, берёт наибольшую установленную; ставится командой `edt setup`, проверяется в `edt doctor`.
