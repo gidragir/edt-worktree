@@ -70,10 +70,24 @@
     }
     Write-Host "    Расширения:   $(if ($imported.Count) { $imported -join ', ' } else { '<нет>' })" -ForegroundColor Cyan
 
-    $projectNames = @($projectDirs | ForEach-Object { Get-EdtWtEclipseProjectName -ProjectDir $_ })
+    # validate (EDT 2025.2) ищет проект по имени каталога, а не по имени из .project:
+    # при расхождении он заново создаёт проект на том же месте и падает с
+    # "перекрывается с расположением другого проекта". Такие проекты не проверяются.
+    $projectNames = @()
+    $unchecked = @()
+    foreach ($dir in $projectDirs) {
+        $name = Get-EdtWtEclipseProjectName -ProjectDir $dir
+        $folder = Split-Path -Leaf $dir
+        if ($name -ceq $folder) { $projectNames += $name } else { $unchecked += "$name (каталог $folder)" }
+    }
     $tsv = Join-Path $ctx.ReferenceWsDir "warmup_validation.tsv"
-    $batch.AddValidate($projectNames, $tsv) | Out-Null
-    Write-Host "    Проверки:     validate по всем импортированным, отчёт: $tsv" -ForegroundColor Cyan
+    if ($projectNames.Count -gt 0) {
+        $batch.AddValidate($projectNames, $tsv) | Out-Null
+        Write-Host "    Проверки:     validate: $($projectNames -join ', '), отчёт: $tsv" -ForegroundColor Cyan
+    }
+    if ($unchecked.Count -gt 0) {
+        Write-Host "    [skip] validate: имя проекта не совпадает с каталогом, 1cedtcli его не проверит: $($unchecked -join ', ')" -ForegroundColor Yellow
+    }
     # Проверки должны отработать по-настоящему, иначе индексы не прогреются.
     $ctx.JvmArgs = ($ctx.JvmArgs -replace '\s*-DisableProjectChecks=true', '')
 

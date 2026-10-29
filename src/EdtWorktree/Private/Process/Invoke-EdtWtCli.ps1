@@ -30,8 +30,9 @@
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    # 1cedtcli пишет в кодировке консоли (cp866 по умолчанию), а не в UTF-8.
+    $psi.StandardOutputEncoding = [Console]::OutputEncoding
+    $psi.StandardErrorEncoding = [Console]::OutputEncoding
 
     # 1cedtcli не принимает -vm (передаёт его в java), а лончер без -vm берёт первый
     # javaw из PATH (шим mise, Oracle java8path) или Java 8 из реестра и падает с

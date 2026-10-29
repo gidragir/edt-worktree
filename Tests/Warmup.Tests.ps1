@@ -68,6 +68,21 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         $out | Should -Match 'Не в рабочих: cfe_b\. Включить: edt project ext p'
     }
 
+    It 'проект с именем не по каталогу импортируется, но в validate не попадает' {
+        $dotProject = Join-Path $script:Repo 'src\cf\.project'
+        $orig = [System.IO.File]::ReadAllText($dotProject)
+        [System.IO.File]::WriteAllText($dotProject, $orig.Replace('<name>cf</name>', '<name>retail</name>'), [System.Text.UTF8Encoding]::new($false))
+        try {
+            $out = Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 | Out-String
+        } finally {
+            [System.IO.File]::WriteAllText($dotProject, $orig, [System.Text.UTF8Encoding]::new($false))
+        }
+        $cap = & $script:Read
+        $cap.Commands | Should -Contain ('import --project "{0}/src/cf"' -f $script:RepoSlash)
+        $cap.Commands[-1] | Should -Match '^validate --file ".+" --project-name-list \["cfe_a"\]$'
+        $out | Should -Match '\[skip\] validate:.*retail \(каталог cf\)'
+    }
+
     It 'клон не на эталонной ветке: отказ с командой switch' {
         git -C $script:Repo switch -q -c other
         try {
