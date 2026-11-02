@@ -24,7 +24,10 @@
     if ($guiVm) {
         Write-Host "    JVM GUI: -Xmx$($guiVm.MaxHeapGb)g (в 1cedt.ini задано 4g)" -ForegroundColor Gray
         $guiArgs += "-vmargs"
-        $guiArgs += $guiVm.Args
+        # Start-Process не берёт элементы в кавычки: строка ini с пробелом
+        # (-XX:CompileCommand=exclude <метод> в EDT 2026.2) рвётся надвое,
+        # и лончер падает с "Failed to create the Java Virtual Machine".
+        $guiArgs += @($guiVm.Args | ForEach-Object { if ($_ -match '\s' -and $_ -notmatch '^".*"$') { "`"$_`"" } else { $_ } })
     }
 
     if (-not $PSCmdlet.ShouldProcess($Context.WorkspaceDir, 'Запустить 1C:EDT')) {

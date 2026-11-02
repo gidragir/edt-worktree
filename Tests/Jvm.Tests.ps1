@@ -278,6 +278,17 @@ Describe 'JVM для GUI' {
             $script:Captured | Should -Contain '-Xmx12g'
         }
 
+        It 'аргумент -vmargs с пробелом из ini идёт в кавычках' {
+            $spaced = '-XX:CompileCommand=exclude org.eclipse.jdt.internal.core.dom.rewrite.ASTRewriteAnalyzer::getExtendedRange'
+            Set-Content -LiteralPath (Join-Path $script:Edt '1cedt.ini') -Value @('-vmargs', $spaced, '-XX:+UseG1GC', '-Xmx4096m')
+            $env:JAVA_HOME = $script:JdkFx
+            $script:Ctx.GuiMaxHeap = '12g'
+            Mock -ModuleName EdtWorktree -CommandName Start-Process -MockWith { $script:Captured = $ArgumentList }
+            & $script:Start $script:Ctx 6>$null
+            $script:Captured | Should -Contain ('"' + $spaced + '"')
+            $script:Captured | Should -Contain '-XX:+UseG1GC'
+        }
+
         It 'без подходящей JDK предупреждает и запускает без -vm' {
             Mock -ModuleName EdtWorktree -CommandName Resolve-EdtWtGuiJvm -MockWith { [pscustomobject]@{ Path = $null; Reason = 'none' } }
             Mock -ModuleName EdtWorktree -CommandName Start-Process -MockWith { $script:Captured = $ArgumentList }
