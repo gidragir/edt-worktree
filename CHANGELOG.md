@@ -3,6 +3,11 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [4.1.1] - 2026-11-02
+
+### Fixed
+- `edt open`/`edt add` с EDT 2026.2 падали с «Failed to create the Java Virtual Machine»: строка `-vmargs` из `1cedt.ini` с пробелом (`-XX:CompileCommand=exclude <метод>`) передавалась без кавычек и рвалась надвое.
+
 ## [4.1.0] - 2026-10-29
 
 ### Changed
