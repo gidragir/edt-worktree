@@ -64,5 +64,13 @@
         }
         throw "1cedtcli завершился с ошибкой (ExitCode $($proc.ExitCode)) через $([int]$started.Elapsed.TotalSeconds) с"
     }
-    Write-Host $stdout
+    # import печатает эту строку XML-парсера на каждый .settings\*.prefs проекта
+    # (EDT 2025.2 и 2026.2), на результат она не влияет. При сбое вывод не фильтруется.
+    $prefsNoise = '[Fatal Error] :1:1: Premature end of file.'
+    $lines = @($stdout -split '\r?\n')
+    $noise = @($lines | Where-Object { $_.Trim() -eq $prefsNoise }).Count
+    Write-Host (($lines | Where-Object { $_.Trim() -ne $prefsNoise }) -join [Environment]::NewLine)
+    if ($noise -gt 0) {
+        Write-Host "    (EDT: строк парсера при чтении .prefs проектов скрыто: $noise, безвредно)" -ForegroundColor DarkGray
+    }
 }

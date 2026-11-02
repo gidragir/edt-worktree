@@ -114,4 +114,28 @@ Describe 'Invoke-EdtWtCli' {
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'безвредные строки парсера при import сворачиваются в одну пометку' {
+        # import печатает "[Fatal Error] :1:1: Premature end of file." на каждый .settings\*.prefs проекта.
+        $root = New-EdtWtTestRoot
+        try {
+            $cli = Join-Path $root 'fakecli.cmd'
+            Set-Content -LiteralPath $cli -Value @(
+                '@echo off'
+                'echo [Fatal Error] :1:1: Premature end of file.'
+                'echo [Fatal Error] :1:1: Premature end of file.'
+                'echo [Fatal Error] :1:1: Premature end of file.'
+                'echo real output'
+            ) -Encoding ASCII
+            $ctx = [pscustomobject]@{ EdtCliPath = $cli; JvmArgs = '-Xmx2g'; TimeoutSec = 60 }
+            $out = & (Get-Module EdtWorktree) {
+                param($c, $w) Invoke-EdtWtCli -Context $c -WorkspaceDir $w -Commands @('version') -MaxHeap '2g'
+            } $ctx (Join-Path $root 'ws') 6>&1 | Out-String
+            $out | Should -Not -Match 'Premature end of file'
+            $out | Should -Match 'real output'
+            $out | Should -Match 'prefs.*: 3'
+        } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
