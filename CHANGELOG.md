@@ -3,6 +3,11 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [4.1.2] - 2026-11-02
+
+### Fixed
+- `edt warmup` и другие запуски 1cedtcli засоряли вывод строками `[Fatal Error] :1:1: Premature end of file.`: EDT печатает их при `import` по разу на каждый `.settings\*.prefs` проекта, на результат они не влияют. При успешном запуске они скрыты, вместо них — одна пометка с их числом; при сбое вывод показывается целиком.
+
 ## [4.1.1] - 2026-11-02
 
 ### Fixed
