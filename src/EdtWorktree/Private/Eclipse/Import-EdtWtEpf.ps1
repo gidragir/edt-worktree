@@ -28,6 +28,12 @@
         $name = $m.Groups[2].Value
         # \!/ - служебная отметка существования узла в экспорте, не настройка.
         if ($name.StartsWith('\!')) { continue }
+        # WORKSPACE_NAME относится к исходной рабочей области, откуда экспортированы настройки,
+        # и не должен заменять имя проекта/тикета текущей области.
+        if ($node -eq 'org.eclipse.ui.ide' -and $name -eq 'WORKSPACE_NAME') {
+            $skipped++
+            continue
+        }
         if (-not $byNode.Contains($node)) { $byNode[$node] = [ordered]@{} }
         $byNode[$node][$name] = $entries[$key]
     }

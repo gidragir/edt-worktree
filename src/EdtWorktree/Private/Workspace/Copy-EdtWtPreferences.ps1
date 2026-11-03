@@ -20,6 +20,7 @@
 
     if (-not $src -or -not (Test-Path -LiteralPath $src)) {
         Write-Host "    [skip] Донор настроек IDE не найден (edt.prefs_source в config.json)." -ForegroundColor DarkGray
+        Set-EdtWtWorkspaceName -Context $Context -WorkspaceDir $WorkspaceDir
         return @()
     }
 
@@ -31,6 +32,7 @@
         $hash = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
         if (-not $Force -and (Test-Path -LiteralPath $marker) -and (Get-Content -LiteralPath $marker -Raw).Trim() -eq $hash) {
             Write-Host "    Настройки IDE из $src уже применены." -ForegroundColor DarkGray
+            Set-EdtWtWorkspaceName -Context $Context -WorkspaceDir $WorkspaceDir
             return @()
         }
         $busy = @(Get-EdtWtWorkspaceProcesses -WorkspaceDir $WorkspaceDir)
@@ -40,6 +42,7 @@
         }
         $r = Import-EdtWtEpf -EpfPath $src -WorkspaceDir $WorkspaceDir
         Set-Content -LiteralPath $marker -Value $hash -Encoding ascii
+        Set-EdtWtWorkspaceName -Context $Context -WorkspaceDir $WorkspaceDir
         $note = if ($r.Skipped -gt 0) { ", вне рабочей области пропущено: $($r.Skipped)" } else { '' }
         Write-Host "    Настройки IDE применены из $src (ключей: $($r.Applied), узлов: $($r.Nodes.Count)$note)." -ForegroundColor DarkGray
         return $r.Nodes
@@ -57,6 +60,8 @@
         Copy-Item -LiteralPath $from -Destination $to -Force
         $copied += $name
     }
+
+    Set-EdtWtWorkspaceName -Context $Context -WorkspaceDir $WorkspaceDir
 
     if ($copied.Count -gt 0) {
         Write-Host "    Настройки IDE перенесены из $src ($($copied.Count) файлов)." -ForegroundColor DarkGray

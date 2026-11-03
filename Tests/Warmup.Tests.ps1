@@ -72,7 +72,7 @@ Describe 'Invoke-EdtWorktreeWarmup' {
                 RefMarkerDuringBuild = (Test-Path -LiteralPath (Join-Path $Context.ReferenceWsDir 'marker.txt'))
             } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:EDTWT_TEST_CAPTURE -Encoding UTF8
             New-Item -ItemType Directory -Force -Path $WorkspaceDir | Out-Null
-            & $script:FakeBuilt $WorkspaceDir @('cf', 'cfe_a', 'retail')
+            & $script:FakeBuilt $WorkspaceDir @('cf', 'cfe_a', 'custom_cf')
         }
         Mock -ModuleName EdtWorktree -CommandName Get-EdtWtWorkspaceProcesses -MockWith { @() }
         Mock -ModuleName EdtWorktree -CommandName Stop-Process -MockWith { }
@@ -170,7 +170,7 @@ Describe 'Invoke-EdtWorktreeWarmup' {
     It 'проект с именем не по каталогу импортируется, но в validate не попадает' {
         $dotProject = Join-Path $script:Repo 'src\cf\.project'
         $orig = [System.IO.File]::ReadAllText($dotProject)
-        [System.IO.File]::WriteAllText($dotProject, $orig.Replace('<name>cf</name>', '<name>retail</name>'), [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::WriteAllText($dotProject, $orig.Replace('<name>cf</name>', '<name>custom_cf</name>'), [System.Text.UTF8Encoding]::new($false))
         try {
             # Правка .project делает клон грязным: git здесь не проверяется.
             $out = Invoke-EdtWorktreeWarmup -ProjectName 'p' -SkipGit -Confirm:$false 6>&1 | Out-String
@@ -181,7 +181,7 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         $cap.Commands | Should -Contain ('import --project "{0}/src/cf"' -f $script:RepoSlash)
         $cap.Commands | Should -Contain 'build --yes true'
         $cap.Commands[-1] | Should -Match '^validate --file ".+" --project-name-list \["cfe_a"\]$'
-        $out | Should -Match '\[skip\] validate:.*retail \(каталог cf\)'
+        $out | Should -Match '\[skip\] validate:.*custom_cf \(каталог cf\)'
     }
 
     It 'клон не на эталонной ветке: отказ с командой switch' {
@@ -397,6 +397,86 @@ Describe 'Настройки IDE из экспорта .epf' {
         $out | Should -Match 'открыта в EDT'
         Test-Path -LiteralPath (Join-Path $script:Settings 'org.eclipse.ui.editors.prefs') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $script:Ws '.metadata\.edtwt-prefs') | Should -BeFalse
+    }
+
+    It 'Import-EdtWtEpf пропускает WORKSPACE_NAME из .epf' {
+        Add-Content -LiteralPath $script:Epf -Value '/instance/org.eclipse.ui.ide/WORKSPACE_NAME=foreign-proj-ticket'
+        $r = & $script:m { param($e, $w) Import-EdtWtEpf -EpfPath $e -WorkspaceDir $w } $script:Epf $script:Ws
+        $r.Applied | Should -Be 4
+        $r.Skipped | Should -Be 2
+        $ideFile = Join-Path $script:Settings 'org.eclipse.ui.ide.prefs'
+        if (Test-Path -LiteralPath $ideFile) {
+            Get-Content -LiteralPath $ideFile -Raw | Should -Not -Match 'foreign-proj-ticket'
+        }
+    }
+}
+
+Describe 'Имя рабочей области в заголовке EDT' {
+    It 'Get-EdtWtWorkspaceTitle формирует имя по шаблону проект-тикет без указания feature' {
+        $fn = { param($ctx, $ws) & $script:m { param($c, $w) Get-EdtWtWorkspaceTitle -Context $c -WorkspaceDir $w } $ctx $ws }
+
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'feature/TASK-1' }) | Should -Be 'proj-TASK-1'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'feature-TASK-2' }) | Should -Be 'proj-TASK-2'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'feature_TASK-3' }) | Should -Be 'proj-TASK-3'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'Feature/TASK-4' }) | Should -Be 'proj-TASK-4'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'TASK-5' }) | Should -Be 'proj-TASK-5'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'bugfix/TASK-6' }) | Should -Be 'proj-bugfix-TASK-6'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; Branch = 'HEAD'; WorktreeId = 'feature-T-7' }) | Should -Be 'proj-T-7'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; RefBranch = 'pre-prod' }) 'D:\ws\proj\_reference' | Should -Be 'proj-pre-prod'
+        & $fn ([PSCustomObject]@{ ProjectId = 'proj'; RefBranch = 'develop' }) 'D:\ws\proj\_reference.building' | Should -Be 'proj-develop'
+    }
+
+    It 'Set-EdtWtWorkspaceName записывает WORKSPACE_NAME и сохраняет прочие настройки' {
+        $ws = Join-Path $script:Root ('wsname_' + [guid]::NewGuid().ToString('N'))
+        $settings = Join-Path $ws '.metadata\.plugins\org.eclipse.core.runtime\.settings'
+        New-Item -ItemType Directory -Force -Path $settings | Out-Null
+        $idePrefs = Join-Path $settings 'org.eclipse.ui.ide.prefs'
+        [System.IO.File]::WriteAllText($idePrefs, "keep=true`r`nWORKSPACE_NAME=old`r`n", [System.Text.Encoding]::Latin1)
+
+        $ctx = [PSCustomObject]@{ ProjectId = 'myproj'; Branch = 'feature/TASK-10' }
+        & $script:m { param($c, $w) Set-EdtWtWorkspaceName -Context $c -WorkspaceDir $w } $ctx $ws
+
+        $content = [System.IO.File]::ReadAllText($idePrefs, [System.Text.Encoding]::Latin1)
+        $content | Should -Match 'WORKSPACE_NAME=myproj-TASK-10'
+        $content | Should -Match 'keep=true'
+        $content | Should -Match 'eclipse\.preferences\.version=1'
+    }
+
+    It 'Copy-EdtWtPreferences устанавливает WORKSPACE_NAME по шаблону даже при наличии WORKSPACE_NAME в .epf' {
+        $ws = Join-Path $script:Root ('wsepf_' + [guid]::NewGuid().ToString('N'))
+        $epf = Join-Path $script:Root ('epfname_' + [guid]::NewGuid().ToString('N') + '.epf')
+        $lines = @(
+            'file_export_version=3.0'
+            '/instance/org.eclipse.ui.ide/WORKSPACE_NAME=sample-foreign-task'
+            '/instance/org.eclipse.ui.editors/currentLineColor=1,2,3'
+        )
+        [System.IO.File]::WriteAllText($epf, (($lines -join "`r`n") + "`r`n"), [System.Text.Encoding]::Latin1)
+
+        $ctx = [PSCustomObject]@{ ProjectId = 'myproj'; Branch = 'feature/TASK-99' }
+        & $script:m { param($c, $w, $e) Copy-EdtWtPreferences -Context $c -WorkspaceDir $w -SourceDir $e } $ctx $ws $epf 6>$null | Out-Null
+
+        $idePrefs = Join-Path $ws '.metadata\.plugins\org.eclipse.core.runtime\.settings\org.eclipse.ui.ide.prefs'
+        Test-Path -LiteralPath $idePrefs | Should -BeTrue
+        $content = [System.IO.File]::ReadAllText($idePrefs, [System.Text.Encoding]::Latin1)
+        $content | Should -Match 'WORKSPACE_NAME=myproj-TASK-99'
+        $content | Should -Not -Match 'sample-foreign-task'
+    }
+
+    It 'Copy-EdtWtPreferences переопределяет чужой WORKSPACE_NAME при копировании из каталога-донора' {
+        $donor = Join-Path $script:Root ('donor_' + [guid]::NewGuid().ToString('N'))
+        $donorSettings = Join-Path $donor '.metadata\.plugins\org.eclipse.core.runtime\.settings'
+        New-Item -ItemType Directory -Force -Path $donorSettings | Out-Null
+        $donorIde = Join-Path $donorSettings 'org.eclipse.ui.ide.prefs'
+        [System.IO.File]::WriteAllText($donorIde, "WORKSPACE_NAME=sample-foreign-task`r`neclipse.preferences.version=1`r`n", [System.Text.Encoding]::Latin1)
+
+        $ws = Join-Path $script:Root ('wsdonor_' + [guid]::NewGuid().ToString('N'))
+        $ctx = [PSCustomObject]@{ ProjectId = 'myproj'; Branch = 'feature/TASK-88' }
+        & $script:m { param($c, $w, $d) Copy-EdtWtPreferences -Context $c -WorkspaceDir $w -SourceDir $d } $ctx $ws $donor 6>$null | Out-Null
+
+        $idePrefs = Join-Path $ws '.metadata\.plugins\org.eclipse.core.runtime\.settings\org.eclipse.ui.ide.prefs'
+        $content = [System.IO.File]::ReadAllText($idePrefs, [System.Text.Encoding]::Latin1)
+        $content | Should -Match 'WORKSPACE_NAME=myproj-TASK-88'
+        $content | Should -Not -Match 'sample-foreign-task'
     }
 }
 
