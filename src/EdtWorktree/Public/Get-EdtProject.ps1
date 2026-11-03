@@ -12,7 +12,7 @@
     .EXAMPLE
         Get-EdtProject | Format-Table
     .EXAMPLE
-        Get-EdtProject -Name ka-intertop-4edt
+        Get-EdtProject -Name my-project
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject[]])]

@@ -13,7 +13,7 @@ BeforeAll {
 
 Describe 'Invoke-EdtWtGit и кодировка вывода Git' {
     BeforeAll {
-        $script:TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('git_test_' + [guid]::NewGuid().ToString('N') + '\Интеграция с Каспи\retail-test')
+        $script:TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('git_test_' + [guid]::NewGuid().ToString('N') + '\Проект с пробелами\demo-test')
         New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
         Push-Location -LiteralPath $script:TempDir
         try {
@@ -44,7 +44,7 @@ Describe 'Invoke-EdtWtGit и кодировка вывода Git' {
             $topLevel | Should -Not -BeNullOrEmpty
             # Проверяем, что в строке нет кракозябр от CP866 (байты D0 98 как ╨Ш)
             $topLevel | Should -Not -Match '╨'
-            $topLevel | Should -Match 'Интеграция с Каспи'
+            $topLevel | Should -Match 'Проект с пробелами'
         } finally {
             Pop-Location
         }

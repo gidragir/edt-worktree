@@ -9,7 +9,7 @@
     .PARAMETER CfProject
         Конфигурация (папка или относительный путь), найденная в клоне.
     .EXAMPLE
-        Set-EdtProject ka -RefBranch pre-prod
+        Set-EdtProject demo -RefBranch pre-prod
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([void])]

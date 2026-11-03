@@ -98,9 +98,9 @@ Describe 'Resolve-EdtWtWrapperArgs' {
     }
 
     It '-Extensions разбирается по запятым' {
-        $r = & $script:Wrap @('ka', '-Extensions', 'cfe,cfe_mp')
+        $r = & $script:Wrap @('demo', '-Extensions', 'cfe,cfe_mp')
         $r.Values.Extensions | Should -Be @('cfe', 'cfe_mp')
-        $r.Extensions | Should -Be @('ka')
+        $r.Extensions | Should -Be @('demo')
     }
 
     It 'отделяет позиционные значения от ключей' {

@@ -18,9 +18,9 @@
     .PARAMETER CfProject
         Конфигурация (папка или относительный путь), если в клоне их несколько.
     .EXAMPLE
-        Add-EdtProject ka-intertop-4edt
+        Add-EdtProject my-project
     .EXAMPLE
-        Add-EdtProject -Name ka -Extensions cfe,cfe_ad -RefBranch pre-prod
+        Add-EdtProject -Name demo -Extensions cfe,cfe_ad -RefBranch pre-prod
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([void])]

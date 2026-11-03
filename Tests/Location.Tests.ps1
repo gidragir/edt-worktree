@@ -92,8 +92,8 @@ Describe 'Чтение и перезапись .location' {
     }
 
     It 'экранирует пробелы и сохраняет кириллицу в ConvertTo-EdtWtEclipseLocationUri' {
-        $path = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'
-        $expected = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
+        $path = 'D:\projects\worktree\Проект с пробелами\demo-app-TASK-2126\src\cf'
+        $expected = 'URI//file:/D:/projects/worktree/Проект%20с%20пробелами/demo-app-TASK-2126/src/cf'
         $actual = & (Get-Module EdtWorktree) { param($p) ConvertTo-EdtWtEclipseLocationUri -Path $p } $path
         $actual | Should -Be $expected
     }
@@ -196,22 +196,22 @@ Describe 'Чтение и перезапись .location' {
     }
 
     It 'декодирует URI с экранированными пробелами и кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
-        $uri = 'URI//file:/D:/projects/worktree/Интеграция%20с%20Каспи/ka-intertop-4edt-INITKZ-2126/src/cf'
-        $expected = 'D:\projects\worktree\Интеграция с Каспи\ka-intertop-4edt-INITKZ-2126\src\cf'
+        $uri = 'URI//file:/D:/projects/worktree/Проект%20с%20пробелами/demo-app-TASK-2126/src/cf'
+        $expected = 'D:\projects\worktree\Проект с пробелами\demo-app-TASK-2126\src\cf'
         $actual = & (Get-Module EdtWorktree) { param($u) ConvertFrom-EdtWtEclipseLocationUri -UriValue $u } $uri
         $actual | Should -Be $expected
     }
 
     It 'декодирует URI с percent-encoded кириллицей в ConvertFrom-EdtWtEclipseLocationUri' {
-        $uri = 'URI//file:/D:/projects/worktree/%D0%98%D0%BD%D1%82%D0%B5%D0%B3%D1%80%D0%B0%D1%86%D0%B8%D1%8F%20%D1%81%20%D0%9A%D0%B0%D1%81%D0%BF%D0%B8/src/cf'
-        $expected = 'D:\projects\worktree\Интеграция с Каспи\src\cf'
+        $uri = 'URI//file:/D:/projects/worktree/%D0%9F%D1%80%D0%BE%D0%B5%D0%BA%D1%82%20%D1%81%20%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB%D0%B0%D0%BC%D0%B8/src/cf'
+        $expected = 'D:\projects\worktree\Проект с пробелами\src\cf'
         $actual = & (Get-Module EdtWorktree) { param($u) ConvertFrom-EdtWtEclipseLocationUri -UriValue $u } $uri
         $actual | Should -Be $expected
     }
 
     It 'исправляет неэкранированные пробелы в .location через Repair-EdtWtWorkspaceLocations' {
         $tempWs = Join-Path ([System.IO.Path]::GetTempPath()) ('ws_' + [guid]::NewGuid().ToString('N'))
-        $tempWt = Join-Path ([System.IO.Path]::GetTempPath()) ('wt_' + [guid]::NewGuid().ToString('N') + '\Интеграция с Каспи\ka-intertop')
+        $tempWt = Join-Path ([System.IO.Path]::GetTempPath()) ('wt_' + [guid]::NewGuid().ToString('N') + '\Проект с пробелами\demo-app')
         $refWs = Join-Path ([System.IO.Path]::GetTempPath()) ('ref_' + [guid]::NewGuid().ToString('N'))
 
         $projDir = Join-Path $tempWs '.metadata\.plugins\org.eclipse.core.resources\.projects\cf'

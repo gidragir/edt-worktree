@@ -10,7 +10,7 @@
     $script:Repos = Join-Path $script:Root 'repos'
     $script:Wts = Join-Path $script:Root 'wt'
     $script:Wss = Join-Path $script:Root 'ws'
-    $r = New-EdtWtTestRepo -Root $script:Repos -Name 'ka' -Branch 'main' -WithRemote -Projects @{
+    $r = New-EdtWtTestRepo -Root $script:Repos -Name 'demo' -Branch 'main' -WithRemote -Projects @{
         'src/cf' = 'Configuration'; 'src/cfe_a' = 'Extension'; 'src/cfe_b' = 'Extension'
     }
     $script:Repo = $r.RepoPath
@@ -26,7 +26,7 @@
             $c.paths.workspaces_root = $wss
             foreach ($n in @($c.projects.PSObject.Properties).ForEach('Name')) { $c.projects.PSObject.Properties.Remove($n) }
             $def = [PSCustomObject]@{ ref_branch = 'main'; cf_project = 'src/cf'; extensions = [string[]]@('src/cfe_a') }
-            Add-Member -InputObject $c.projects -MemberType NoteProperty -Name 'ka' -Value $def
+            Add-Member -InputObject $c.projects -MemberType NoteProperty -Name 'demo' -Value $def
             Save-EdtWtConfig -Config $c | Out-Null
         } $script:Repos $script:Wts $script:Wss
     }
@@ -56,8 +56,8 @@ Describe 'Диспетчер edt: проекты и конфиг' {
     It 'project list [имя] -> Get-EdtProject' {
         Invoke-EdtCommand project list | Out-Null
         Should -Invoke Get-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { -not $Name }
-        Invoke-EdtCommand project list ka | Out-Null
-        Should -Invoke Get-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'ka' }
+        Invoke-EdtCommand project list demo | Out-Null
+        Should -Invoke Get-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'demo' }
     }
 
     It 'project без подкоманды показывает список' {
@@ -66,9 +66,9 @@ Describe 'Диспетчер edt: проекты и конфиг' {
     }
 
     It 'project add передаёт расширения, ветку, конфигурацию и -Yes' {
-        Invoke-EdtCommand project add ka -Extensions cfe_a,cfe_b -RefBranch develop -CfProject src/cf -Yes
+        Invoke-EdtCommand project add demo -Extensions cfe_a,cfe_b -RefBranch develop -CfProject src/cf -Yes
         Should -Invoke Add-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter {
-            $Name -eq 'ka' -and ($Extensions -join ',') -eq 'cfe_a,cfe_b' -and $RefBranch -eq 'develop' -and
+            $Name -eq 'demo' -and ($Extensions -join ',') -eq 'cfe_a,cfe_b' -and $RefBranch -eq 'develop' -and
             $CfProject -eq 'src/cf' -and $Confirm -eq $false
         }
     }
@@ -79,14 +79,14 @@ Describe 'Диспетчер edt: проекты и конфиг' {
     }
 
     It 'project ext без правок запускает диалог (Change не задан)' {
-        Invoke-EdtCommand project ext ka
-        Should -Invoke Set-EdtProjectExtension -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'ka' -and -not $Change }
+        Invoke-EdtCommand project ext demo
+        Should -Invoke Set-EdtProjectExtension -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'demo' -and -not $Change }
     }
 
     It 'project ext: -Yes и --dry-run остаются ключами, а -cfe_a правкой' {
-        Invoke-EdtCommand project ext ka -Yes +cfe_b -cfe_a --dry-run
+        Invoke-EdtCommand project ext demo -Yes +cfe_b -cfe_a --dry-run
         Should -Invoke Set-EdtProjectExtension -ModuleName EdtWorktree -Exactly 1 -ParameterFilter {
-            $Name -eq 'ka' -and ($Change -join ',') -eq '+cfe_b,-cfe_a' -and $Confirm -eq $false -and $WhatIf -eq $true
+            $Name -eq 'demo' -and ($Change -join ',') -eq '+cfe_b,-cfe_a' -and $Confirm -eq $false -and $WhatIf -eq $true
         }
     }
 
@@ -95,12 +95,12 @@ Describe 'Диспетчер edt: проекты и конфиг' {
     }
 
     It 'project set / remove' {
-        Invoke-EdtCommand project set ka -RefBranch pre-prod
-        Should -Invoke Set-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'ka' -and $RefBranch -eq 'pre-prod' -and -not $CfProject }
-        Invoke-EdtCommand project set ka --cf-project src/cf
+        Invoke-EdtCommand project set demo -RefBranch pre-prod
+        Should -Invoke Set-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'demo' -and $RefBranch -eq 'pre-prod' -and -not $CfProject }
+        Invoke-EdtCommand project set demo --cf-project src/cf
         Should -Invoke Set-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $CfProject -eq 'src/cf' }
-        Invoke-EdtCommand project remove ka -Yes
-        Should -Invoke Remove-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'ka' -and $Confirm -eq $false }
+        Invoke-EdtCommand project remove demo -Yes
+        Should -Invoke Remove-EdtProject -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Name -eq 'demo' -and $Confirm -eq $false }
     }
 
     It 'неизвестная подкоманда project - ошибка со списком' {
@@ -110,7 +110,7 @@ Describe 'Диспетчер edt: проекты и конфиг' {
     It 'ключ не той подкоманды отвергается' {
         { Invoke-EdtCommand project list -RefBranch x } | Should -Throw '*Неизвестный ключ*'
         { Invoke-EdtCommand status -NoGui } | Should -Throw '*Неизвестный ключ*'
-        { Invoke-EdtCommand warmup ka -Refresh } | Should -Throw '*Неизвестный ключ*'
+        { Invoke-EdtCommand warmup demo -Refresh } | Should -Throw '*Неизвестный ключ*'
     }
 
     It 'config show/path/set; значение, начинающееся с дефиса, не ключ' {
@@ -180,8 +180,8 @@ Describe 'Диспетчер edt: рабочие области' {
     }
 
     It 'open: короткая ветка получает префикс, worktree создаётся, запуск в нём' {
-        Invoke-EdtCommand open ka T-1 --no-gui 6>$null
-        $wt = Join-Path (Join-Path $script:Wts 'ka') 'feature-T-1'
+        Invoke-EdtCommand open demo T-1 --no-gui 6>$null
+        $wt = Join-Path (Join-Path $script:Wts 'demo') 'feature-T-1'
         Test-Path -LiteralPath $wt | Should -BeTrue
         (& git -C $wt rev-parse --abbrev-ref HEAD) | Should -Be 'feature/T-1'
         (Get-Content -LiteralPath $env:EDTWT_TEST_MARK -Raw).Trim() | Should -Be $wt
@@ -189,23 +189,23 @@ Describe 'Диспетчер edt: рабочие области' {
     }
 
     It 'open с полным именем ветки и повтор: worktree переиспользуется' {
-        Invoke-EdtCommand open ka bugfix/x 6>$null
-        $wt = Join-Path (Join-Path $script:Wts 'ka') 'bugfix-x'
+        Invoke-EdtCommand open demo bugfix/x 6>$null
+        $wt = Join-Path (Join-Path $script:Wts 'demo') 'bugfix-x'
         (& git -C $wt rev-parse --abbrev-ref HEAD) | Should -Be 'bugfix/x'
         Mock -ModuleName EdtWorktree New-EdtWtWorktree { throw 'не должен вызываться' }
-        Invoke-EdtCommand open ka bugfix/x -Refresh 6>$null
+        Invoke-EdtCommand open demo bugfix/x -Refresh 6>$null
         (Get-Content -LiteralPath $env:EDTWT_TEST_MARK -Raw).Trim() | Should -Be $wt
         Should -Invoke Invoke-EdtWorktreeOpen -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $Refresh }
     }
 
     It 'open --dry-run не создаёт worktree и не запускает IDE' {
-        $null = Invoke-EdtCommand open ka T-2 --dry-run *>&1
-        Test-Path -LiteralPath (Join-Path (Join-Path $script:Wts 'ka') 'feature-T-2') | Should -BeFalse
+        $null = Invoke-EdtCommand open demo T-2 --dry-run *>&1
+        Test-Path -LiteralPath (Join-Path (Join-Path $script:Wts 'demo') 'feature-T-2') | Should -BeFalse
         Should -Invoke Invoke-EdtWorktreeOpen -ModuleName EdtWorktree -Exactly 0
     }
 
     It 'open: проект без ветки - ошибка; не проект - не зарегистрирован' {
-        { Invoke-EdtCommand open ka } | Should -Throw '*Не указана ветка*'
+        { Invoke-EdtCommand open demo } | Should -Throw '*Не указана ветка*'
         { Invoke-EdtCommand open nonexistent T-1 } | Should -Throw '*не зарегистрирован*'
     }
 
@@ -252,15 +252,15 @@ Describe 'Диспетчер edt: рабочие области' {
     }
 
     It 'warmup с проектом запускается в клоне; лишний аргумент - ошибка' {
-        Invoke-EdtCommand warmup ka 6>$null
-        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'ka' }
+        Invoke-EdtCommand warmup demo 6>$null
+        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'demo' }
         (Get-Content -LiteralPath $env:EDTWT_TEST_MARK -Raw).Trim() | Should -Be $script:Repo
-        { Invoke-EdtCommand warmup ka cfe_a } | Should -Throw '*Лишние аргументы*'
+        { Invoke-EdtCommand warmup demo cfe_a } | Should -Throw '*Лишние аргументы*'
     }
 
     It 'warmup --skip-git передаётся в Invoke-EdtWorktreeWarmup' {
-        Invoke-EdtCommand warmup ka --skip-git 6>$null
-        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'ka' -and $SkipGit }
+        Invoke-EdtCommand warmup demo --skip-git 6>$null
+        Should -Invoke Invoke-EdtWorktreeWarmup -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'demo' -and $SkipGit }
     }
 
     It 'warmup без аргументов берёт проект текущего каталога (ProjectName не задан)' {
@@ -277,9 +277,9 @@ Describe 'Диспетчер edt: рабочие области' {
     }
 
     It 'remove с проектом и веткой: полная ветка уходит в Clean (не имя папки)' {
-        $wt = (Join-Path (Join-Path $script:Wts 'ka') 'feature-T-1')
-        Invoke-EdtCommand open ka T-1 --no-gui 6>$null
-        Invoke-EdtCommand remove ka T-1 -Yes 6>$null
+        $wt = (Join-Path (Join-Path $script:Wts 'demo') 'feature-T-1')
+        Invoke-EdtCommand open demo T-1 --no-gui 6>$null
+        Invoke-EdtCommand remove demo T-1 -Yes 6>$null
         Should -Invoke Invoke-EdtWorktreeClean -ModuleName EdtWorktree -Exactly 1 -ParameterFilter {
             $WorktreeId -eq 'feature/T-1' -and $Confirm -eq $false
         }
@@ -298,19 +298,19 @@ Describe 'Диспетчер edt: рабочие области' {
     It 'remove без аргументов - текущий worktree; проект без ветки - ошибка' {
         Invoke-EdtCommand remove
         Should -Invoke Invoke-EdtWorktreeClean -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { -not $WorktreeId }
-        { Invoke-EdtCommand remove ka } | Should -Throw '*Не указана ветка*'
+        { Invoke-EdtCommand remove demo } | Should -Throw '*Не указана ветка*'
     }
 
     It 'remove несуществующего worktree - ошибка' {
-        { Invoke-EdtCommand remove ka T-404 } | Should -Throw '*Worktree не найден*'
+        { Invoke-EdtCommand remove demo T-404 } | Should -Throw '*Worktree не найден*'
     }
 
     It 'status и update' {
-        Invoke-EdtCommand status ka
-        Should -Invoke Get-EdtWorktreeList -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'ka' }
-        Invoke-EdtCommand update ka kb --skip-git
+        Invoke-EdtCommand status demo
+        Should -Invoke Get-EdtWorktreeList -ModuleName EdtWorktree -Exactly 1 -ParameterFilter { $ProjectName -eq 'demo' }
+        Invoke-EdtCommand update demo demo2 --skip-git
         Should -Invoke Update-EdtWtReference -ModuleName EdtWorktree -Exactly 1 -ParameterFilter {
-            ($Project -join ',') -eq 'ka,kb' -and $SkipGit
+            ($Project -join ',') -eq 'demo,demo2' -and $SkipGit
         }
     }
 }
@@ -342,7 +342,7 @@ Describe 'Автодополнение edt' {
 
     It 'имена проектов после open, warmup, update, remove и project (подкоманды с проектом)' {
         foreach ($line in 'edt open ', 'edt warmup ', 'edt update ', 'edt remove ', 'edt project ext ', 'edt project set ', 'edt project remove ', 'edt project list ') {
-            (& $script:Complete $line) | Should -Be @('ka') -Because $line
+            (& $script:Complete $line) | Should -Be @('demo') -Because $line
         }
     }
 
@@ -351,9 +351,9 @@ Describe 'Автодополнение edt' {
     }
 
     It 'после project ext и имени проекта: +имя для нерабочих и -имя для рабочих' {
-        $r = & $script:Complete 'edt project ext ka +'
+        $r = & $script:Complete 'edt project ext demo +'
         $r | Should -Be @('+cfe_b')
-        $all = & $script:Complete 'edt project ext ka '
+        $all = & $script:Complete 'edt project ext demo '
         $all | Should -Contain '+cfe_b'
         $all | Should -Contain '-cfe_a'
         $all | Should -Not -Contain '+cfe_a'
@@ -381,27 +381,27 @@ Describe 'Автодополнение edt: безопасность и ветк
         { & $script:Complete 'edt project ' } | Should -Not -Throw
         # PowerShell сам подставляет имена файлов, когда подсказок нет: наших кандидатов быть не должно.
         (& $script:Complete 'edt project ') | Should -Not -Contain 'list'
-        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'demo'
         [IO.File]::ReadAllBytes($script:CfgFile) | Should -Be $before
     }
 
     It 'конфиг старше v3: пусто, файл не тронут, .v2.bak нет' {
-        [IO.File]::WriteAllText($script:CfgFile, '{"paths":{"projects_root":"X:\r"},"projects":{"ka":{}}}')
+        [IO.File]::WriteAllText($script:CfgFile, '{"paths":{"projects_root":"X:\r"},"projects":{"demo":{}}}')
         $before = [IO.File]::ReadAllBytes($script:CfgFile)
-        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'demo'
         [IO.File]::ReadAllBytes($script:CfgFile) | Should -Be $before
         @(Get-ChildItem -LiteralPath (Split-Path $script:CfgFile) -Filter '*.v2.bak').Count | Should -Be 0
     }
 
     It 'конфиг отсутствует: пусто, файл не создаётся' {
         Remove-Item -LiteralPath $script:CfgFile -Force -ErrorAction SilentlyContinue
-        (& $script:Complete 'edt open ') | Should -Not -Contain 'ka'
+        (& $script:Complete 'edt open ') | Should -Not -Contain 'demo'
         Test-Path -LiteralPath $script:CfgFile | Should -BeFalse
     }
 
     It 'конфиг v3 работает как раньше' {
         & $script:Seed
-        (& $script:Complete 'edt open ') | Should -Be @('ka')
+        (& $script:Complete 'edt open ') | Should -Be @('demo')
     }
 
     It 'ветки: только имена, переживающие Resolve-EdtWtBranchName' {
@@ -409,7 +409,7 @@ Describe 'Автодополнение edt: безопасность и ветк
         foreach ($b in 'feature/T-5', 'develop', 'bugfix/y', 'feature/a/b') {
             & git -C $script:Repo branch $b 2>$null
         }
-        $r = & $script:Complete 'edt open ka '
+        $r = & $script:Complete 'edt open demo '
         $r | Should -Contain 'T-5'
         $r | Should -Contain 'bugfix/y'
         $r | Should -Contain 'feature/a/b'

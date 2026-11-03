@@ -1,4 +1,4 @@
-﻿# EdtWorktree 3.0: переносимая установка и настройка из CLI
+# EdtWorktree 3.0: переносимая установка и настройка из CLI
 
 Дата: 2026-10-28. Статус: черновик на согласовании.
 
@@ -124,7 +124,7 @@
     "branch_prefix": "feature/"
   },
   "projects": {
-    "ka-intertop-4edt": {
+    "demo-app": {
       "ref_branch": "pre-prod",
       "cf_project": "src/cf",
       "extensions": ["src/cfe", "src/cfe_ad"]
@@ -209,7 +209,7 @@
 
 Поиск `.project` в клоне на глубину до 3 уровней (без `.git`). Конфигурация —
 проект с nature `com._1c.g5.v8.dt.core.V8ConfigurationNature`, расширение — с
-`com._1c.g5.v8.dt.core.V8ExtensionNature` (проверено на `ka-intertop-4edt`:
+`com._1c.g5.v8.dt.core.V8ExtensionNature` (проверено на типовых конфигурациях:
 `src/cf`, `src/cfe*`). Если конфигураций несколько или ни одной — спросить
 пользователя (в неинтерактивном режиме — ошибка с подсказкой `-CfProject`).
 

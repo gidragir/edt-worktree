@@ -1,4 +1,4 @@
-﻿# EdtWorktree 3.0: переносимая установка и настройка из CLI — план реализации
+# EdtWorktree 3.0: переносимая установка и настройка из CLI — план реализации
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -624,9 +624,9 @@ It '.gitattributes фиксирует CRLF для .cmd' { Get-Content .gitattrib
 
 Не автоматизируется: нужен установленный EDT.
 
-- [ ] **Step 1:** На машине автора: `edt doctor` после миграции его конфига — проекты `ka-amadeo-4edt`, `ka-intertop-4edt`, `retail`, `employee-loyalty`, `it-department` (последний — через `edt project add`), без `error`, кроме реально не настроенного.
-- [ ] **Step 2:** `edt warmup ka-intertop-4edt` — эталон в `_reference` (переименован из `_reference_preprod`), в журнале батча есть `validate`.
-- [ ] **Step 3:** `edt open ka-intertop-4edt TASK-TEST -NoGui`, затем `edt open` в созданном worktree — IDE стартует с выбранной JVM (в выводе видно, почему выбрана).
-- [ ] **Step 4:** `edt remove ka-intertop-4edt TASK-TEST -Yes` при открытой IDE соседней задачи — соседняя IDE не закрыта.
+- [ ] **Step 1:** На рабочей машине: `edt doctor` после миграции конфига — проекты `app-main`, `demo-app`, `custom-project`, `extra-module`, `test-dept` (последний — через `edt project add`), без `error`, кроме реально не настроенного.
+- [ ] **Step 2:** `edt warmup demo-app` — эталон в `_reference` (переименован из `_reference_preprod`), в журнале батча есть `validate`.
+- [ ] **Step 3:** `edt open demo-app TASK-TEST -NoGui`, затем `edt open` в созданном worktree — IDE стартует с выбранной JVM (в выводе видно, почему выбрана).
+- [ ] **Step 4:** `edt remove demo-app TASK-TEST -Yes` при открытой IDE соседней задачи — соседняя IDE не закрыта.
 - [ ] **Step 5:** Чистый пользователь Windows (или Windows Sandbox): строка установки из README → `edt setup` → `edt doctor`.
 - [ ] **Step 6:** Результаты — в описании PR.

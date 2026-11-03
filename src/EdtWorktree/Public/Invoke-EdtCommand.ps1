@@ -152,7 +152,7 @@
         }
     }
     $positional = @($parsed.Extensions)
-    # Списки (add cfe_a,cfe_b; update ka,kb) PowerShell отдаёт словом с пробелом.
+    # Списки (add cfe_a,cfe_b; update p1,p2) PowerShell отдаёт словом с пробелом.
     if ($Command -in @('add', 'update')) {
         $positional = @($positional | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })
     }

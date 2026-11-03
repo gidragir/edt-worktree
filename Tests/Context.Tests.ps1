@@ -6,7 +6,7 @@
     $script:m = Get-Module EdtWorktree
 
     # Корни с пробелом и кириллицей: путь к клонам и к worktree.
-    $script:Repos = Join-Path $script:Root 'Интеграция с Каспи'
+    $script:Repos = Join-Path $script:Root 'Проект с пробелами'
     $script:Wts = Join-Path $script:Root 'Рабочие деревья\wt'
     $script:Wss = Join-Path $script:Root 'ws'
     $r = New-EdtWtTestRepo -Root $script:Repos -Name 'proj' -WithRemote -Projects @{ 'src/cf' = 'Configuration'; 'src/cfe_a' = 'Extension' }

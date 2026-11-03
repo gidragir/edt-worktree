@@ -7,7 +7,7 @@
     .PARAMETER Name
         Имя зарегистрированного проекта.
     .EXAMPLE
-        Remove-EdtProject ka
+        Remove-EdtProject demo
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     [OutputType([void])]

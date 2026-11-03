@@ -75,11 +75,11 @@ edt <подкоманда> [аргументы] [ключи]
 (--dry-run) и -Yes (без вопросов).
 
 Примеры:
-  edt project add ka-intertop-4edt
-  edt project ext ka-intertop-4edt +cfe_ad -cfe_old
-  edt open ka-intertop-4edt TASK-123
+  edt project add my-project
+  edt project ext my-project +cfe_ad -cfe_old
+  edt open my-project TASK-123
   edt open -NoGui                       открыть текущий worktree без IDE
-  edt warmup ka-intertop-4edt
+  edt warmup my-project
   edt add cfe_esf
   edt remove TASK-123 -WhatIf
   edt vr cf load src/cf                 инкрементально

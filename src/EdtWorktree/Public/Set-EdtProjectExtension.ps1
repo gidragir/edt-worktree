@@ -12,9 +12,9 @@
     .PARAMETER Change
         Правки вида '+cfe_new', '-cfe_old'.
     .EXAMPLE
-        Set-EdtProjectExtension ka -Change '+cfe_new','-cfe_old'
+        Set-EdtProjectExtension demo -Change '+cfe_new','-cfe_old'
     .EXAMPLE
-        Set-EdtProjectExtension ka
+        Set-EdtProjectExtension demo
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([void])]
