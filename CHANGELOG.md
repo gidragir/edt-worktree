@@ -3,6 +3,11 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [4.1.4] - 2026-11-18
+
+### Fixed
+- При прогреве эталона (`edt warmup`) удаление флага отключения проверок из `JvmArgs` теперь корректно распознаёт `-DdisableProjectChecks=true` (и другие варианты написания `-D{1,2}isableProjectChecks`), а не только `-DisableProjectChecks=true`.
+
 ## [4.1.3] - 2026-11-03
 
 ### Fixed
