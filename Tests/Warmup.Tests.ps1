@@ -48,7 +48,7 @@
         $c.paths.worktrees_root = $wts
         $c.paths.workspaces_root = $wss
         $c.edt.cli_path = 'C:\Program Files\1C\1CE\components\1cedtcli.bat'
-        Add-Member -InputObject $c.edt -MemberType NoteProperty -Name 'extra_vmargs' -Value '-DisableProjectChecks=true' -Force
+        Add-Member -InputObject $c.edt -MemberType NoteProperty -Name 'extra_vmargs' -Value '-DdisableProjectChecks=true -DdisableFTS=true' -Force
         $def = [PSCustomObject]@{ ref_branch = 'develop'; cf_project = 'src/cf'; extensions = [string[]]@('src/cfe_a', 'src/cfe_gone') }
         Add-Member -InputObject $c.projects -MemberType NoteProperty -Name 'p' -Value $def
         Save-EdtWtConfig -Config $c | Out-Null
@@ -80,7 +80,7 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         Mock -ModuleName EdtWorktree -CommandName Start-EdtWtGui -MockWith { }
     }
 
-    It 'батч: cf + рабочие расширения + build + validate, без -DisableProjectChecks' {
+    It 'батч: cf + рабочие расширения + build + validate, без -DdisableProjectChecks' {
         $out = Invoke-EdtWorktreeWarmup -ProjectName 'p' -Confirm:$false 6>&1 | Out-String
         $cap = & $script:Read
         $cap.Commands | Should -Contain ('import --project "{0}/src/cf"' -f $script:RepoSlash)
@@ -89,7 +89,8 @@ Describe 'Invoke-EdtWorktreeWarmup' {
         @($cap.Commands -match 'cfe_gone').Count | Should -Be 0
         $cap.Commands[-2] | Should -BeExactly 'build --yes true'
         $cap.Commands[-1] | Should -Match '^validate --file ".+\.building/warmup_validation\.tsv" --project-name-list \["cf" "cfe_a"\]$'
-        $cap.JvmArgs | Should -Not -Match 'DisableProjectChecks'
+        $cap.JvmArgs | Should -Not -Match 'isableProjectChecks'
+        $cap.JvmArgs | Should -Match '-DdisableFTS=true'
         $cap.WorkspaceDir | Should -Be $script:BuildDir
         $out | Should -Match '\[skip\].*cfe_gone'
         $out | Should -Match 'Не в рабочих: cfe_b\. Включить: edt project ext p'

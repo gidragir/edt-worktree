@@ -119,7 +119,7 @@
         Write-Host "    [skip] validate: имя проекта не совпадает с каталогом, проверяется только сборкой: $($unchecked -join ', ')" -ForegroundColor Yellow
     }
     # Проверки должны отработать по-настоящему, иначе индексы не прогреются.
-    $ctx.JvmArgs = ($ctx.JvmArgs -replace '\s*-DisableProjectChecks=true', '')
+    $ctx.JvmArgs = ($ctx.JvmArgs -replace '\s*-D{1,2}isableProjectChecks(?:=\S+)?', '').Trim()
 
     # 6. Найденные, но не рабочие расширения.
     $unused = @(Get-EdtWtUnusedExtensions -Context $ctx | ForEach-Object { Split-Path -Leaf $_ })
